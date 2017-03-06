@@ -1,6 +1,10 @@
-from rollupmagic import ProgressTracker, ProgressMagician
+import uuid
+from rollupmagic import ProgressTracker, ProgressMagician, TrackerBase
 import time
 import pytest
+from mock import patch
+import json
+import arrow
 
 
 redis_data = """
@@ -39,12 +43,12 @@ class MockProgressManager(object):
 
 
 def test_can_create_rollup_event():
-    r = ProgressTracker(Key='test')
-    assert r.key == 'test'
+    r = ProgressTracker(Id='test')
+    assert r.id == 'test'
 
 
 def test_can_total_progress_with_child_events():
-    pm = ProgressMagician(ProgressManager=MockProgressManager())
+    pm = ProgressMagician(DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='abc')
     b = ProgressTracker(Name='CreateFolder', ParentId=a.id)
     c = ProgressTracker(Name='CopyFiles', ParentId=b.id)
@@ -53,17 +57,13 @@ def test_can_total_progress_with_child_events():
 
 
 def test_can_total_progress_off_one_branch():
-    pm = ProgressMagician(ProgressManager=MockProgressManager())
-    a = ProgressTracker(Name='CopyFiles')
-    b = ProgressTracker(Name='CreateFolder', ParentId=a.id)
-    c = ProgressTracker(Name='CopyFiles', ParentId=b.id)
-    d = ProgressTracker(Name='ImportVM')
-    pm.with_tracker(a).with_tracker(b).with_tracker(c).with_tracker(d)
+    a = setup_basic().find_friendly_id('a')
     assert a.count_children() == 2
 
 
 def setup_basic():
-    pm = ProgressMagician(ProgressManager=MockProgressManager(),
+    pm = ProgressMagician(Name='MainWorkflow',
+                          DbConnection=MockProgressManager(),
                           EstimatedSeconds=10)
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', ParentId=a.id, FriendlyId='b')
@@ -91,7 +91,7 @@ def test_start_tracker_sets_in_progress():
     t = setup_basic().find_friendly_id('a')
     t.parent().start()
     t.start()
-    assert t.is_in_progress()
+    assert t.is_in_progress
 
 
 def test_starting_tracker_without_starting_parent_throws_error():
@@ -105,6 +105,7 @@ def test_starting_tracker_without_starting_parent_throws_error():
 
 def test_start_tracker_starts_timer():
     t = setup_basic().find_friendly_id('a')
+    t.parent().start()
     t.start()
     time.sleep(2.1)
     assert t.elapsed_time_in_seconds() > 2 and \
@@ -112,8 +113,10 @@ def test_start_tracker_starts_timer():
 
 
 def test_multiple_trackers_track_separately():
-    a = setup_basic().find_friendly_id('a')
-    b = setup_basic().find_friendly_id('b')
+    pm = setup_basic()
+    pm.start()
+    a = pm.find_friendly_id('a')
+    b = pm.find_friendly_id('b')
     a.start()
     time.sleep(2.1)
     b.start()
@@ -125,7 +128,7 @@ def test_multiple_trackers_track_separately():
 
 
 def test_can_set_status():
-    a = setup_basic().find_friendly_id('a').with_status('test status')
+    a = setup_basic().find_friendly_id('a').with_status_msg('test status')
     assert a.status_msg == 'test status'
 
 
@@ -141,4 +144,84 @@ def test_remaining_returns_actual_minus_estimate():
     pm.start()
     time.sleep(1.5)
     assert pm.remaining_time_in_seconds() < 9
+
+
+def test_can_get_full_key():
+    pm = setup_basic()
+    a = pm.find_friendly_id('a')
+    b = pm.find_friendly_id('b')
+    assert b.get_full_key() == "{}:{}".format(a.id, b.id)
+
+
+def test_root_full_key_is_just_id():
+    pm = setup_basic()
+    assert pm.get_full_key() == pm.id
+
+
+@patch('tests.test_rollupmagic.MockProgressManager')
+def test_update_calls_db_update(db_mock):
+    pm = setup_basic()
+    pm.update()
+    assert db_mock.called_once()
+
+
+@patch('tests.test_rollupmagic.MockProgressManager.update_tracker')
+def test_multiple_update_calls_db_update_only_once(db_mock):
+    pm = setup_basic()
+    pm.update().update()
+    assert db_mock.called_once()
+
+
+@patch('tests.test_rollupmagic.MockProgressManager.update_tracker')
+def test_child_object_saves_parent_object(db_mock):
+    a = setup_basic().find_friendly_id('a')
+    a.update()
+    assert db_mock.call_count == 2
+
+
+def test_child_update_clears_dirty_flag():
+    a = setup_basic().find_friendly_id('a')
+    a.update()
+    assert not a.is_dirty and not a.parent().is_dirty
+
+
+def test_can_convert_name_from_json():
+    n = str(uuid.uuid4())
+    a = setup_basic().find_friendly_id('a')
+    j = a.with_name(n).to_json()
+    t = TrackerBase.from_json(a.id, j)
+    assert t.name == n
+
+
+def test_can_convert_start_time_from_json():
+    start = arrow.utcnow()
+    pm = setup_basic().start()
+    a = pm.find_friendly_id('a').parent().start()
+    j = a.start(StartTime=start).to_json()
+    t = TrackerBase.from_json(a.id, j)
+    assert t.start_time == start
+
+
+def test_can_convert_children_from_json():
+    a = setup_basic().find_friendly_id('a')
+    t = TrackerBase.from_json(a.id, a.to_json())
+    assert t.children == a.children
+
+
+def test_can_convert_in_canceled_status_from_json():
+    a = setup_basic().find_friendly_id('a').cancel()
+    t = TrackerBase.from_json(a.id, a.to_json())
+    assert t.status == 'Canceled' and t.done and not t.is_in_progress
+
+
+def test_can_convert_in_failed_status_from_json():
+    a = setup_basic().find_friendly_id('a').fail()
+    t = TrackerBase.from_json(a.id, a.to_json())
+    assert t.status == 'Failed' and t.done and not t.is_in_progress
+
+
+def test_can_convert_in_succeed_status_from_json():
+    a = setup_basic().find_friendly_id('a').succeed()
+    t = TrackerBase.from_json(a.id, a.to_json())
+    assert t.status == 'Succeeded' and t.done and not t.is_in_progress
 
