@@ -1,10 +1,21 @@
 import redis
-from rollupmagic import RedisProgressManager, ProgressMagician, ProgressEvent
+from rollupmagic import RedisProgressManager, ProgressMagician, ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 rpm = RedisProgressManager(RedisConnection=r)
-pm = ProgressMagician(ProgressManager=rpm)
-pm.load('abc')
+pm = ProgressMagician(DbConnection=rpm)
+pm.load('0fba41ac-1e0b-46c4-95da-4369e0b2d541')
+print pm.count_children()
+exit()
+c = ProgressTracker(Name='ConvertVMWorkflow')
+e = ProgressTracker(Name='ExportImage', ParentId=c.id)
+f = ProgressTracker(Name='ConvertImage', ParentId=c.id)
+g = ProgressTracker(Name='UploadImage', ParentId=c.id)
+h = ProgressTracker(Name='NotifyCompleteStatus', ParentId=c.id)
+pm.with_tracker(c).with_tracker(e).with_tracker(f).with_tracker(g) \
+   .with_tracker(h)
+pm.update_all()
+print pm.count_children()
 
 # pm = ProgressMagician(ProgressManager=rpm, Key='abc')
 # a = ProgressEvent(ProgressTotal=10, Key='def')

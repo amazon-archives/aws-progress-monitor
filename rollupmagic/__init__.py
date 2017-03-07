@@ -15,7 +15,6 @@ class TrackerState(object):
         self.percent_done = 0
         self.start_time = None
         self.finish_time = None
-
     def start(self, **kwargs):
         self.is_in_progress = True
         self.start_time = kwargs.get('StartTime')
@@ -42,9 +41,16 @@ class RedisProgressManager(object):
         self.redis = kwargs.get('RedisConnection')
         self.trackers = kwargs.get('Trackers')
 
+    def children_key(self, k):
+        return "{}:ch".format(k)
+
     def update_tracker(self, e):
         pipe = self.redis.pipeline(True)
-        pipe.hmset(e.get_full_key(), e.to_json())
+        data = json.loads(e.to_json())
+        pipe.hmset(e.get_full_key(), data)
+        if e.children:
+            pipe.sadd(self.children_key(e.id), *set(e.children))
+        print '---\nsetting {}: {}\n---'.format(e.get_full_key(), data)
         if e.friendly_id:
             pipe.set(e.friendly_id, e.id)
         pipe.execute()
@@ -53,10 +59,21 @@ class RedisProgressManager(object):
         if (self.redis.exists(friendly_id)):
             id = self.redis.get(friendly_id)
             if id:
-                return self.get_all_by_key(id)
+                return self.get_all_by_id(id)
 
     def get_all_by_id(self, id):
-        t = self.redis.hgetall(id)
+        j = self.redis.hgetall(id)
+        if j:
+            print 'Getting {}: {}'.format(id, j)
+            t = TrackerBase.from_json(id, j)
+            c = self.redis.smembers(self.children_key(id))
+            if c:
+                t.children = c
+            t.db_conn = self
+            self.trackers[id] = t
+            if len(t.children) > 0:
+                for c in t.children:
+                    self.get_all_by_id(c)
 
     def inc_progress(self, e, value=1):
         self.redis.hincrby(e.get_full_key(), "curr_prog", value)
@@ -102,7 +119,7 @@ class TrackerBase(object):
         if not self.parent_id:
             return self.id
         else:
-            return "{}:{}".format(self.parent_id, self.id)
+            return "{}".format(self.id)
 
     def inc_progress(self, val=1):
         self.db_conn.inc_progress(val)
@@ -184,13 +201,10 @@ class TrackerBase(object):
         j['d'] = self.done
         if self.status:
             j['st'] = self.status
-        if self.children:
-            j['c'] = self.children
         return json.dumps(j)
 
     @staticmethod
-    def from_json(id, data):
-        j = json.loads(data)
+    def from_json(id, j):
         t = ProgressTracker(Id=id)
         if 'name' in j.keys():
             t.with_name(j['name'])
@@ -210,6 +224,13 @@ class TrackerBase(object):
             t.done = bool(j['d'])
         t.is_dirty = False
         return t
+
+    def with_child(self, c):
+        if self.children and c in self.children:
+            return self
+        self.is_dirty = True
+        self.children.append(c)
+        return self
 
     def with_children(self, c):
         self.is_dirty = not self.children == c
@@ -309,12 +330,16 @@ class ProgressMagician(TrackerBase):
         self.trackers = {}
         super(ProgressMagician, self).__init__(**kwargs)
         self.trackers[self.id] = self
+        self.db_conn.trackers = self.trackers
 
-    def load(self, key):
-        all_items = self.db_conn.get_all_by_key(key)
-        self.progress_trackers = {}
-        for i in all_items.keys():
-            self.add_progress_tracker(i, all_items[i])
+    def load(self, id):
+        self.id = id
+        self.db_conn.get_all_by_id(id)
+        print self.trackers
+        self = self.trackers[id]
+        # self.progress_trackers = {}
+        # for i in all_items.keys():
+        #    self.add_progress_tracker(i, all_items[i])
 
     def with_tracker(self, t):
         t.db_conn = self.db_conn
@@ -323,7 +348,7 @@ class ProgressMagician(TrackerBase):
         t.trackers = self.trackers
         p = self.trackers[t.parent_id]
         if t.id not in p.children:
-            p.children.append(t.id)
+            p.with_child(t.id)
         self.trackers[t.id] = t
         return self
 
@@ -332,3 +357,10 @@ class ProgressMagician(TrackerBase):
             if self.trackers[k].friendly_id == fk:
                 return self.trackers[k]
         return None
+
+    def update_all(self):
+        for i in self.trackers.keys():
+            t = self.trackers[i]
+            if self.trackers[i].is_dirty:
+                t.update()
+        return self
