@@ -1,11 +1,11 @@
 import uuid
 from rollupmagic import ProgressTracker, ProgressMagician, TrackerBase
+from rollupmagic import RedisProgressManager
 import time
 import pytest
 from mock import patch
 import json
 import arrow
-
 
 redis_data = """
     {
@@ -25,6 +25,58 @@ redis_data = """
            "name": "workflow3",
        }
     }
+"""
+
+not_started_json = """
+{
+"94a52a41-bf9e-43e3-9650-859f7c263dc8": {
+"st": "Not started",
+"in_p": "False",
+"d": "False",
+"name": "None",
+"l_u": "2017-03-07T10:41:20.875748+00:00"
+},
+"7acfd432-8392-49d3-867c-d85bb3824e61": {
+"d": "False",
+"l_u": "2017-03-07T10:43:56.398706+00:00",
+"pid": "94a52a41-bf9e-43e3-9650-859f7c263dc8",
+"st": "No Started",
+"in_p": "True",
+"name": "ConvertVMWorkflow"
+},
+"582ab745-2929-47a1-b026-6a09db268688": {
+"d": "False",
+"l_u": "2017-03-07T10:41:20.875748+00:00",
+"pid": "7acfd432-8392-49d3-867c-d85bb3824e61",
+"st": "Not started",
+"in_p": "False",
+"name": "NotifyCompleteStatus"
+},
+"c31405c9-d44b-4c28-b4ca-7008de4e468a": {
+"d": "False",
+"l_u": "2017-03-07T10:41:20.875748+00:00",
+"pid": "7acfd432-8392-49d3-867c-d85bb3824e61",
+"st": "Not started",
+"in_p": "False",
+"name": "ConvertImage"
+},
+"6cf22931-d571-41f9-b1db-b47740e680f3": {
+"d": "False",
+"l_u": "2017-03-07T10:41:20.875748+00:00",
+"pid": "7acfd432-8392-49d3-867c-d85bb3824e61",
+"st": "Not started",
+"in_p": "False",
+"name": "ExportImage"
+},
+"039fe353-2c01-49f4-a743-b09c02c9f683": {
+"d": "False",
+"l_u": "2017-03-07T10:41:20.875748+00:00",
+"pid": "7acfd432-8392-49d3-867c-d85bb3824e61",
+"st": "Not started",
+"in_p": "False",
+"name": "UploadImage"
+}
+}
 """
 
 
@@ -224,4 +276,41 @@ def test_can_convert_in_succeed_status_from_json():
     a = setup_basic().find_friendly_id('a').succeed()
     t = TrackerBase.from_json(a.id, a.to_json())
     assert t.status == 'Succeeded' and t.done and not t.is_in_progress
+
+
+def get_by_id_side_effect(id):
+    if id == 'test':
+        print 'loading test'
+        return json.loads(not_started_json)
+    return None
+
+
+def children_side_effect(id):
+    if id == 'test':
+        return ['582ab745-2929-47a1-b026-6a09db268688',
+                '7acfd432-8392-49d3-867c-d85bb3824e61',
+                'c31405c9-d44b-4c28-b4ca-7008de4e468a',
+                '6cf22931-d571-41f9-b1db-b47740e680f3',
+                '039fe353-2c01-49f4-a743-b09c02c9f683']
+    return None
+
+
+@patch('rollupmagic.RedisProgressManager.get_by_id')
+@patch('rollupmagic.RedisProgressManager.get_children')
+def test_can_convert_from_db(c_mock, g_mock):
+    c_mock.return_value = get_by_id_side_effect
+    c_mock.side_effect = children_side_effect
+    pm = ProgressMagician(DbConnection=RedisProgressManager())
+    pm.load('test')
+    assert pm.count_children() == 5
+
+
+@patch('rollupmagic.RedisProgressManager.get_by_id')
+@patch('rollupmagic.RedisProgressManager.get_children')
+def test_can_convert_from_db(c_mock, g_mock):
+    c_mock.return_value = get_by_id_side_effect
+    c_mock.side_effect = children_side_effect
+    pm = ProgressMagician(DbConnection=RedisProgressManager())
+    pm.load('test')
+    assert pm.count_children() == 5
 

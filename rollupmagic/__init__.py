@@ -15,6 +15,7 @@ class TrackerState(object):
         self.percent_done = 0
         self.start_time = None
         self.finish_time = None
+
     def start(self, **kwargs):
         self.is_in_progress = True
         self.start_time = kwargs.get('StartTime')
@@ -61,16 +62,26 @@ class RedisProgressManager(object):
             if id:
                 return self.get_all_by_id(id)
 
+    def get_by_id(self, id):
+        logging.info('Reading {} from Redis DB'.format(id))
+        return self.redis.hgetall(id)
+
+    def get_children(self, id):
+        k = self.children_key(id)
+        if self.redis.exists(k):
+            return self.redis.smembers(self.children_key(id))
+
     def get_all_by_id(self, id):
-        j = self.redis.hgetall(id)
+        j = self.get_by_id(id)
         if j:
-            print 'Getting {}: {}'.format(id, j)
             t = TrackerBase.from_json(id, j)
-            c = self.redis.smembers(self.children_key(id))
+            t.trackers = self.trackers
+            c = self.get_children(id)
             if c:
                 t.children = c
             t.db_conn = self
             self.trackers[id] = t
+
             if len(t.children) > 0:
                 for c in t.children:
                     self.get_all_by_id(c)
@@ -143,6 +154,13 @@ class TrackerBase(object):
             return self.trackers[self.parent_id]
 
     def start(self, **kwargs):
+        if self.is_in_progress:
+            logging.warning('{} is already started. Ignoring start()'
+                            .format(self.id))
+            return self
+        if self.done:
+            logging.warning('{} is done. Ignoring start()')
+            return self
         self.is_in_progress = True
         self.start_time = kwargs.get('StartTime', arrow.utcnow())
         if self.parent() and not self.parent().is_in_progress:
@@ -152,6 +170,7 @@ class TrackerBase(object):
         self.state.start(StartTime=self.start_time,
                          EstimatedSeconds=self.estimated_seconds)
         self.status = 'In Progress'
+        self.is_dirty = True
         return self
 
     def with_status_msg(self, msg):
@@ -212,16 +231,16 @@ class TrackerBase(object):
             t.with_estimated_seconds(j['est_sec'])
         if 'start' in j.keys():
             t.with_start_time(arrow.get(j['start']))
-        if 'c' in j.keys():
-            t.with_children(j['c'])
         if 'in_p' in j.keys():
-            t.is_in_progress = j['in_p']
+            t.is_in_progress = j['in_p'] == 'True'
         if 'st' in j.keys():
             t.status = j['st']
+        if 'pid' in j.keys():
+            t.parent_id = j['pid']
         if 's' in j.keys():
             t.source = j['s']
         if 'd' in j.keys():
-            t.done = bool(j['d'])
+            t.done = j['d'] == 'True'
         t.is_dirty = False
         return t
 
@@ -358,9 +377,16 @@ class ProgressMagician(TrackerBase):
                 return self.trackers[k]
         return None
 
+    def find_id(self, id):
+        if id in self.trackers.keys():
+            return self.trackers[id]
+        return None
+
     def update_all(self):
         for i in self.trackers.keys():
             t = self.trackers[i]
             if self.trackers[i].is_dirty:
                 t.update()
+        if self.is_dirty:
+            self.update()
         return self
