@@ -107,6 +107,9 @@ class TrackerBase(object):
         self.done = False
         self.status = 'Not started'
 
+    def __str__(self):
+        return self.name
+
     def get_tracker_progress_total(self, pe=None):
         t = 0
         c = 0
@@ -155,14 +158,21 @@ class TrackerBase(object):
 
     def start(self, **kwargs):
         if self.is_in_progress:
+            print 'in progress!'
+        else:
+            print 'NOT in progress!'
+        print '{} is starting: now is {}'.format(self.id, self.is_in_progress)
+        if self.is_in_progress:
             logging.warning('{} is already started. Ignoring start()'
                             .format(self.id))
             return self
         if self.done:
             logging.warning('{} is done. Ignoring start()')
             return self
-        self.is_in_progress = True
         self.start_time = kwargs.get('StartTime', arrow.utcnow())
+        if bool(kwargs.get('Parents', False)):
+            if self.parent():
+                self.parent().start(Parents=True)
         if self.parent() and not self.parent().is_in_progress:
             raise Exception("You can't start a tracker if the parent isn't " +
                             'started')
@@ -170,6 +180,7 @@ class TrackerBase(object):
         self.state.start(StartTime=self.start_time,
                          EstimatedSeconds=self.estimated_seconds)
         self.status = 'In Progress'
+        self.is_in_progress = True
         self.is_dirty = True
         return self
 
@@ -220,7 +231,7 @@ class TrackerBase(object):
         j['d'] = self.done
         if self.status:
             j['st'] = self.status
-        return json.dumps(j)
+        return json.loads(json.dumps(j))
 
     @staticmethod
     def from_json(id, j):
@@ -232,7 +243,7 @@ class TrackerBase(object):
         if 'start' in j.keys():
             t.with_start_time(arrow.get(j['start']))
         if 'in_p' in j.keys():
-            t.is_in_progress = j['in_p'] == 'True'
+            t.is_in_progress = str(j['in_p']) == 'True'
         if 'st' in j.keys():
             t.status = j['st']
         if 'pid' in j.keys():
@@ -240,7 +251,7 @@ class TrackerBase(object):
         if 's' in j.keys():
             t.source = j['s']
         if 'd' in j.keys():
-            t.done = j['d'] == 'True'
+            t.done = str(j['d']) == 'True'
         t.is_dirty = False
         return t
 
@@ -354,11 +365,7 @@ class ProgressMagician(TrackerBase):
     def load(self, id):
         self.id = id
         self.db_conn.get_all_by_id(id)
-        print self.trackers
         self = self.trackers[id]
-        # self.progress_trackers = {}
-        # for i in all_items.keys():
-        #    self.add_progress_tracker(i, all_items[i])
 
     def with_tracker(self, t):
         t.db_conn = self.db_conn

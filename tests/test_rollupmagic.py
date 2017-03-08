@@ -41,7 +41,7 @@ not_started_json = """
 "l_u": "2017-03-07T10:43:56.398706+00:00",
 "pid": "94a52a41-bf9e-43e3-9650-859f7c263dc8",
 "st": "No Started",
-"in_p": "True",
+"in_p": "False",
 "name": "ConvertVMWorkflow"
 },
 "582ab745-2929-47a1-b026-6a09db268688": {
@@ -200,9 +200,8 @@ def test_remaining_returns_actual_minus_estimate():
 
 def test_can_get_full_key():
     pm = setup_basic()
-    a = pm.find_friendly_id('a')
     b = pm.find_friendly_id('b')
-    assert b.get_full_key() == "{}:{}".format(a.id, b.id)
+    assert b.get_full_key() == b.id
 
 
 def test_root_full_key_is_just_id():
@@ -247,17 +246,13 @@ def test_can_convert_name_from_json():
 
 def test_can_convert_start_time_from_json():
     start = arrow.utcnow()
-    pm = setup_basic().start()
-    a = pm.find_friendly_id('a').parent().start()
-    j = a.start(StartTime=start).to_json()
+    pm = setup_basic()
+    a = pm.find_friendly_id('a')
+    j = a.start(Parents=True, StartTime=start).to_json()
     t = TrackerBase.from_json(a.id, j)
+    print t.start_time
+    print start
     assert t.start_time == start
-
-
-def test_can_convert_children_from_json():
-    a = setup_basic().find_friendly_id('a')
-    t = TrackerBase.from_json(a.id, a.to_json())
-    assert t.children == a.children
 
 
 def test_can_convert_in_canceled_status_from_json():
@@ -279,14 +274,17 @@ def test_can_convert_in_succeed_status_from_json():
 
 
 def get_by_id_side_effect(id):
-    if id == 'test':
-        print 'loading test'
-        return json.loads(not_started_json)
+    items = json.loads(not_started_json)
+    print 'getting ' + id
+    if id in items.keys():
+        print 'here!!!!'
+        print items[id]
+        return items[id]
     return None
 
 
 def children_side_effect(id):
-    if id == 'test':
+    if id == '94a52a41-bf9e-43e3-9650-859f7c263dc8':
         return ['582ab745-2929-47a1-b026-6a09db268688',
                 '7acfd432-8392-49d3-867c-d85bb3824e61',
                 'c31405c9-d44b-4c28-b4ca-7008de4e468a',
@@ -298,19 +296,22 @@ def children_side_effect(id):
 @patch('rollupmagic.RedisProgressManager.get_by_id')
 @patch('rollupmagic.RedisProgressManager.get_children')
 def test_can_convert_from_db(c_mock, g_mock):
-    c_mock.return_value = get_by_id_side_effect
+    g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
     pm = ProgressMagician(DbConnection=RedisProgressManager())
-    pm.load('test')
+    pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
     assert pm.count_children() == 5
 
 
 @patch('rollupmagic.RedisProgressManager.get_by_id')
 @patch('rollupmagic.RedisProgressManager.get_children')
-def test_can_convert_from_db(c_mock, g_mock):
-    c_mock.return_value = get_by_id_side_effect
+def test_can_start_all_parents(c_mock, g_mock):
+    g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
     pm = ProgressMagician(DbConnection=RedisProgressManager())
-    pm.load('test')
-    assert pm.count_children() == 5
-
+    pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
+    t = pm.find_id('039fe353-2c01-49f4-a743-b09c02c9f683')
+    t.start(Parents=True)
+    print t.status
+    assert t.parent().status == 'In Progress'
+    assert t.parent().parent().status == 'In Progress'
