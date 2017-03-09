@@ -2,6 +2,13 @@ import uuid
 import arrow
 import logging
 import json
+from fluentmetrics.metric import FluentMetric
+
+
+class TrackerStats(object):
+    def __init__(self, **kwargs):
+        self.id = kwargs.get('Id')
+        self.trackers = kwargs.get('Trackers')
 
 
 class TrackerState(object):
@@ -28,7 +35,12 @@ class TrackerState(object):
     def elapsed_time_in_seconds(self):
         if not self.start_time:
             return 0
-        return (arrow.utcnow() - self.start_time).total_seconds()
+        if self.finish_time:
+            delta = self.finish_time - self.start_time
+        else:
+            delta = arrow.utcnow() - self.start_time
+
+        return delta.total_seconds()
 
     def remaining_time_in_seconds(self):
         if self.estimated_seconds:
@@ -47,7 +59,7 @@ class RedisProgressManager(object):
 
     def update_tracker(self, e):
         pipe = self.redis.pipeline(True)
-        data = json.loads(e.to_json())
+        data = e.to_json()
         pipe.hmset(e.get_full_key(), data)
         if e.children:
             pipe.sadd(self.children_key(e.id), *set(e.children))
@@ -106,6 +118,12 @@ class TrackerBase(object):
         self.is_in_progress = False
         self.done = False
         self.status = 'Not started'
+        self.metric = None
+        self.metric_name = None
+        self.metric_namespace = None
+        self.finish_time = None
+        self.autosave = True
+        self.db_conn = kwargs.get('DbConnection')
 
     def __str__(self):
         return self.name
@@ -138,29 +156,41 @@ class TrackerBase(object):
     def inc_progress(self, val=1):
         self.db_conn.inc_progress(val)
 
-    def count_children(self, id=None):
+    @property
+    def stats(self):
+        s = TrackerStats(Id=self.id, Trackers=self.trackers)
+        return s
+
+    def get_stats(self, **kwargs):
+        id = kwargs.get('Id', None)
         tot = 0
         if id:
             t = self.trackers[id]
         else:
             t = self.trackers[self.id]
-            print t.children
         if len(t.children):
             for k in t.children:
-                tot = tot + self.count_children(k)
+                tot = tot + self.get_stats(k)
         tot = tot + len(t.children)
         print t.name, tot
         return tot
+
+    def get_children_by_status(self, status, id=None):
+        c = []
+        t = self.main.trackers[id]
+        if t.status == status:
+            print 'here', t.friendly_id
+            c.append(t)
+        if len(t.children):
+            for k in t.children:
+                c.append(self.get_children_by_status(status, k))
+        return c
 
     def parent(self):
         if self.parent_id in self.trackers.keys():
             return self.trackers[self.parent_id]
 
     def start(self, **kwargs):
-        if self.is_in_progress:
-            print 'in progress!'
-        else:
-            print 'NOT in progress!'
         print '{} is starting: now is {}'.format(self.id, self.is_in_progress)
         if self.is_in_progress:
             logging.warning('{} is already started. Ignoring start()'
@@ -169,6 +199,9 @@ class TrackerBase(object):
         if self.done:
             logging.warning('{} is done. Ignoring start()')
             return self
+        m = kwargs.get('Message', None)
+        if m:
+            self.with_status_msg(m)
         self.start_time = kwargs.get('StartTime', arrow.utcnow())
         if bool(kwargs.get('Parents', False)):
             if self.parent():
@@ -176,7 +209,6 @@ class TrackerBase(object):
         if self.parent() and not self.parent().is_in_progress:
             raise Exception("You can't start a tracker if the parent isn't " +
                             'started')
-
         self.state.start(StartTime=self.start_time,
                          EstimatedSeconds=self.estimated_seconds)
         self.status = 'In Progress'
@@ -184,8 +216,11 @@ class TrackerBase(object):
         self.is_dirty = True
         return self
 
-    def with_status_msg(self, msg):
-        self.status_msg = msg
+    def with_status_msg(self, s, clean=False):
+        if not self.status_msg == s:
+            self.status_msg = s
+            if not clean:
+                self.dirty = True
         return self
 
     def remaining_time_in_seconds(self):
@@ -202,10 +237,10 @@ class TrackerBase(object):
         if self.is_dirty:
             try:
                 self.db_conn.update_tracker(self)
-            except Exception:
-                logging.error('Error persisting to DB')
+            except Exception as e:
+                logging.error('Error persisting to DB: {}'.format(str(e)))
                 raise
-        self.is_dirty = False
+            self.is_dirty = False
         return self
 
     def to_json(self):
@@ -227,6 +262,10 @@ class TrackerBase(object):
             j['l_u'] = self.last_update.isoformat()
         if self.source:
             j['s'] = self.source
+        if self.metric_namespace:
+            j['m_ns'] = self.metric_namespace
+        if self.metric:
+            j['m'] = self.metric_name
         j['in_p'] = self.is_in_progress
         j['d'] = self.done
         if self.status:
@@ -237,21 +276,31 @@ class TrackerBase(object):
     def from_json(id, j):
         t = ProgressTracker(Id=id)
         if 'name' in j.keys():
-            t.with_name(j['name'])
+            t.with_name(j['name'], True)
         if 'est_sec' in j.keys():
-            t.with_estimated_seconds(j['est_sec'])
+            t.with_estimated_seconds(j['est_sec'], True)
         if 'start' in j.keys():
-            t.with_start_time(arrow.get(j['start']))
+            t.with_start_time(arrow.get(j['start']), True)
+        if 'finish' in j.keys():
+            t.with_finish_time(arrow.get(j['finish']), True)
+        if 'st_msg' in j.keys():
+            t.with_status_msg(arrow.get(j['st_msg']), True)
+        if 'fid' in j.keys():
+            t.with_friendly_id(j['fid'], True)
+        if 'pid' in j.keys():
+            t.parent_id = j['pid']
         if 'in_p' in j.keys():
             t.is_in_progress = str(j['in_p']) == 'True'
         if 'st' in j.keys():
             t.status = j['st']
-        if 'pid' in j.keys():
-            t.parent_id = j['pid']
         if 's' in j.keys():
-            t.source = j['s']
+            t.with_source(j['s'], True)
         if 'd' in j.keys():
             t.done = str(j['d']) == 'True'
+        if 'm_ns' in j.keys() and 'm' in j.keys():
+            ns = j['m_ns']
+            m = j['m']
+            t.with_metric(Namespace=ns, Metric=m, Clean=True)
         t.is_dirty = False
         return t
 
@@ -262,14 +311,27 @@ class TrackerBase(object):
         self.children.append(c)
         return self
 
-    def with_children(self, c):
-        self.is_dirty = not self.children == c
-        self.children = c
+    def with_estimated_seconds(self, e, clean=False):
+        if not self.estimated_seconds == e:
+            self.estimated_seconds = e
+            if not clean:
+                self.dirty = True
         return self
 
-    def with_estimated_seconds(self, s):
-        self.is_dirty = not self.estimated_seconds == s
-        self.estimated_seconds = s
+    def with_start_time(self, s, clean=False):
+        if not self.start_time == s:
+            self.start_time = s
+            self.state.start_time = s
+            if not clean:
+                self.dirty = True
+        return self
+
+    def with_finish_time(self, f, clean=False):
+        if not self.finish_time == f:
+            self.finish_time = f
+            self.state.finish_time = f
+            if not clean:
+                self.dirty = True
         return self
 
     def with_last_update(self, d):
@@ -277,28 +339,46 @@ class TrackerBase(object):
         self.last_update = d
         return self
 
-    def with_source(self, s):
-        self.is_dirty = not self.source == s
-        self.source = s
+    def with_autosave(self):
+        if self.autosave:
+            return self
+        self.is_dirty = True
+        self.autosave = True
+
+    def with_source(self, s, clean=False):
+        if not self.source == s:
+            self.source = s
+            if not clean:
+                self.dirty = True
         return self
 
-    def with_start_time(self, s):
-        self.is_dirty = not self.start_time == s
-        self.start_time = s
-        self.state.start_time = s
-        return self
-
-    def with_finish_time(self, f):
-        self.is_dirty = not self.finish_time == f
-        self.finish_time = f
-        self.state.start_time = f
+    def with_friendly_id(self, f, clean=False):
+        if not self.friendly_id == f:
+            self.friendly_id = f
+            if not clean:
+                self.dirty = True
         return self
 
     def with_metric(self, **kwargs):
-        self.metric_namespace = kwargs.get('Namespace')
-        self.metric = kwargs.get('Metric')
+        ns = kwargs.get('Namespace')
+        m = kwargs.get('Metric')
+        clean = kwargs.get('Clean', False)
+        if self.metric_namespace == ns and self.metric_name == m:
+            return self
+        self.metric_name = m
+        self.metric_namespace = ns
+        self.metric = FluentMetric().with_namespace(self.metric_namespace)
+        if not clean:
+            self.dirty = True
         return self
 
+    @property
+    def not_started(self):
+        return self.get_children_by_status('Not started', self.id)
+
+    @property
+    def in_progress(self):
+        return self.get_children_by_status('In Progress', self.id)
 
 class ProgressTracker(TrackerBase):
     def __init__(self, **kwargs):
@@ -306,10 +386,11 @@ class ProgressTracker(TrackerBase):
         self.done = False
         super(ProgressTracker, self).__init__(**kwargs)
 
-    def with_name(self, n):
+    def with_name(self, n, clean=False):
         if not self.name == n:
             self.name = n
-            self.dirty = True
+            if not clean:
+                self.dirty = True
         return self
 
     def with_message(self, m):
@@ -324,54 +405,84 @@ class ProgressTracker(TrackerBase):
         self.dirty = True
         return self
 
-    def succeed(self):
+    def has_metric(self):
+        return self.metric and self.metric_name
+
+    def log_done(self):
+        if not self.has_metric:
+            logging.debug('No metric defined for {}'.format(self.id))
+            return self
+        try:
+            self.metric.seconds(MetricName=self.metric_name,
+                                Value=self.elapsed_time_in_seconds())
+            self.metric.count(MetricName="{}/{}"
+                              .format(self.metric_name, self.status))
+        except Exception as e:
+            logging.warn('Error logging done metric: {}\n{}:{}'
+                         .format(str(e), self.metric_name,
+                                 self.elapsed_time_in_seconds()))
+        return self
+
+    def mark_done(self, status, m=None):
+        if self.done:
+            logging.warning('Already done: {}'.self.id)
+            return self
+        if m:
+            self.with_status_msg(m)
+        self.with_finish_time(arrow.utcnow())
+        self.done = True
+        self.is_in_progress = False
+        self.status = status
+        self.is_dirty = True
+        self.log_done()
+        return self
+
+    def succeed(self, **kwargs):
         if self.status == 'Succeeeded' and self.done and \
                           not self.is_in_progress:
+            logging.warning('Already succeeded {}'.self.id)
             return self
-        self.status = 'Succeeded'
-        self.done = True
-        self.is_in_progress = False
-        self.is_dirty = True
+        m = kwargs.get('Message', None)
+        self.mark_done('Succeeded', m)
         return self
 
-    def cancel(self):
+    def cancel(self, **kwargs):
         if self.status == 'Canceled' and self.done and not self.is_in_progress:
+            logging.warning('Already canceled: {}'.self.id)
             return self
-        self.status = 'Canceled'
-        self.is_in_progress = False
-        self.done = True
-        self.is_dirty = True
+        m = kwargs.get('Message', None)
+        self.mark_done('Canceled', m)
         return self
 
-    def fail(self):
+    def fail(self, **kwargs):
         if self.status == 'Failed' and self.done and not self.is_in_progress:
+            logging.warning('Already failed: {}'.self.id)
             return self
-        self.status = 'Failed'
-        self.done = True
-        self.is_in_progress = False
-        self.is_dirty = True
+        m = kwargs.get('Message', None)
+        self.mark_done('Failed', m)
         return self
 
 
 class ProgressMagician(TrackerBase):
     def __init__(self, **kwargs):
-        self.db_conn = kwargs.get('DbConnection')
         self.name = kwargs.get('Name')
         self.trackers = {}
         super(ProgressMagician, self).__init__(**kwargs)
         self.trackers[self.id] = self
+        self.main = self.trackers[self.id]
         self.db_conn.trackers = self.trackers
 
     def load(self, id):
         self.id = id
         self.db_conn.get_all_by_id(id)
-        self = self.trackers[id]
+        self.main = self.trackers[id]
 
     def with_tracker(self, t):
         t.db_conn = self.db_conn
         if not t.parent_id:
             t.parent_id = self.id
         t.trackers = self.trackers
+        t.main = self
         p = self.trackers[t.parent_id]
         if t.id not in p.children:
             p.with_child(t.id)

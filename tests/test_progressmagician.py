@@ -1,6 +1,6 @@
 import uuid
-from rollupmagic import ProgressTracker, ProgressMagician, TrackerBase
-from rollupmagic import RedisProgressManager
+from progressmagician import ProgressTracker, ProgressMagician, TrackerBase
+from progressmagician import RedisProgressManager
 import time
 import pytest
 from mock import patch
@@ -104,8 +104,9 @@ def test_can_total_progress_with_child_events():
     a = ProgressTracker(Name='CopyFiles', FriendlyId='abc')
     b = ProgressTracker(Name='CreateFolder', ParentId=a.id)
     c = ProgressTracker(Name='CopyFiles', ParentId=b.id)
-    pm.with_tracker(a).with_tracker(b).with_tracker(c)
-    assert pm.count_children() == 3
+    d = ProgressTracker(Name='SendEmail', ParentId=c.id)
+    pm.with_tracker(a).with_tracker(b).with_tracker(c).with_tracker(d)
+    assert pm.count_children() == 4
 
 
 def test_can_total_progress_off_one_branch():
@@ -209,21 +210,21 @@ def test_root_full_key_is_just_id():
     assert pm.get_full_key() == pm.id
 
 
-@patch('tests.test_rollupmagic.MockProgressManager')
+@patch('tests.test_progressmagician.MockProgressManager')
 def test_update_calls_db_update(db_mock):
     pm = setup_basic()
     pm.update()
     assert db_mock.called_once()
 
 
-@patch('tests.test_rollupmagic.MockProgressManager.update_tracker')
+@patch('tests.test_progressmagician.MockProgressManager.update_tracker')
 def test_multiple_update_calls_db_update_only_once(db_mock):
     pm = setup_basic()
     pm.update().update()
     assert db_mock.called_once()
 
 
-@patch('tests.test_rollupmagic.MockProgressManager.update_tracker')
+@patch('tests.test_progressmagician.MockProgressManager.update_tracker')
 def test_child_object_saves_parent_object(db_mock):
     a = setup_basic().find_friendly_id('a')
     a.update()
@@ -234,6 +235,82 @@ def test_child_update_clears_dirty_flag():
     a = setup_basic().find_friendly_id('a')
     a.update()
     assert not a.is_dirty and not a.parent().is_dirty
+
+
+def test_with_metric_sets_has_metric_flag():
+    a = setup_basic().find_friendly_id('a')
+    a.with_metric(Namespace='ns', Metric='m')
+    assert a.has_metric()
+
+
+def test_no_metric_sets_has_no_metric_flag():
+    a = setup_basic().find_friendly_id('a')
+    assert not a.has_metric()
+
+
+@patch('fluentmetrics.metric.FluentMetric.seconds')
+@patch('fluentmetrics.metric.FluentMetric.count')
+def test_success_logs_two_metrics(s_mock, c_mock):
+    a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
+                                                        Metric='m')
+    a.start(Parents=True)
+    time.sleep(.5)
+    a.succeed()
+    assert s_mock.call_count == 1 and c_mock.call_count == 1 and \
+        a.status == 'Succeeded' and a.done and not a.is_in_progress and \
+        a.finish_time
+
+
+@patch('fluentmetrics.metric.FluentMetric.seconds')
+@patch('fluentmetrics.metric.FluentMetric.count')
+def test_success_stops_timer(s_mock, c_mock):
+    a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
+                                                        Metric='m')
+    a.start(Parents=True)
+    time.sleep(.25)
+    a.succeed()
+    f = a.finish_time
+    time.sleep(.25)
+    assert a.finish_time == f
+
+
+@patch('fluentmetrics.metric.FluentMetric.seconds')
+@patch('fluentmetrics.metric.FluentMetric.count')
+def test_failed_logs_two_metrics(s_mock, c_mock):
+    a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
+                                                        Metric='m')
+    a.start(Parents=True)
+    time.sleep(.5)
+    a.fail()
+    assert s_mock.call_count == 1 and c_mock.call_count == 1 and \
+        a.status == 'Failed' and a.done and not a.is_in_progress and \
+        a.finish_time
+
+
+@patch('fluentmetrics.metric.FluentMetric.seconds')
+@patch('fluentmetrics.metric.FluentMetric.count')
+def test_fail_stops_timer(s_mock, c_mock):
+    a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
+                                                        Metric='m')
+    a.start(Parents=True)
+    time.sleep(.25)
+    a.fail()
+    f = a.finish_time
+    time.sleep(.25)
+    assert a.finish_time == f
+
+
+@patch('fluentmetrics.metric.FluentMetric.seconds')
+@patch('fluentmetrics.metric.FluentMetric.count')
+def test_canceled_logs_two_metrics(s_mock, c_mock):
+    a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
+                                                        Metric='m')
+    a.start(Parents=True)
+    time.sleep(.5)
+    a.cancel()
+    assert s_mock.call_count == 1 and c_mock.call_count == 1 and \
+        a.status == 'Canceled' and a.done and not a.is_in_progress and \
+        a.finish_time
 
 
 def test_can_convert_name_from_json():
@@ -293,8 +370,8 @@ def children_side_effect(id):
     return None
 
 
-@patch('rollupmagic.RedisProgressManager.get_by_id')
-@patch('rollupmagic.RedisProgressManager.get_children')
+@patch('progressmagician.RedisProgressManager.get_by_id')
+@patch('progressmagician.RedisProgressManager.get_children')
 def test_can_convert_from_db(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
@@ -303,8 +380,8 @@ def test_can_convert_from_db(c_mock, g_mock):
     assert pm.count_children() == 5
 
 
-@patch('rollupmagic.RedisProgressManager.get_by_id')
-@patch('rollupmagic.RedisProgressManager.get_children')
+@patch('progressmagician.RedisProgressManager.get_by_id')
+@patch('progressmagician.RedisProgressManager.get_children')
 def test_can_start_all_parents(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
@@ -315,3 +392,51 @@ def test_can_start_all_parents(c_mock, g_mock):
     print t.status
     assert t.parent().status == 'In Progress'
     assert t.parent().parent().status == 'In Progress'
+
+
+def test_getting_elapsed_time_at_parent_returns_longest_child():
+    main = setup_basic().main
+    b = main.find_friendly_id('b')
+    c = main.find_friendly_id('c')
+    b.start(Parents=True)
+    time.sleep(1.25)
+    c.start(Parents=True)
+    time.sleep(2)
+    assert main.elapsed_time_in_seconds() > 3
+
+
+def test_start_with_status_msg_updates_msg():
+    s = str(uuid.uuid4())
+    a = setup_basic().find_friendly_id('a')
+    a.start(Message=s, Parents=True)
+    assert a.status_msg == s
+
+
+def test_fail_with_status_msg_updates_msg():
+    s = str(uuid.uuid4())
+    a = setup_basic().find_friendly_id('a')
+    assert a.start(Parents=True).fail(Message=s).status_msg == s
+
+
+def test_cancel_with_status_msg_updates_msg():
+    s = str(uuid.uuid4())
+    a = setup_basic().find_friendly_id('a')
+    assert a.start(Parents=True).cancel(Message=s).status_msg == s
+
+
+def test_succeed_with_status_msg_updates_msg():
+    s = str(uuid.uuid4())
+    a = setup_basic().find_friendly_id('a')
+    assert a.start(Parents=True).succeed(Message=s).status_msg == s
+
+
+def test_can_get_not_started_trackers():
+    a = setup_basic().find_friendly_id('a')
+    assert len(a.not_started) == 2
+
+
+def test_can_get_in_progress_trackers():
+    a = setup_basic().find_friendly_id('a')
+    b = setup_basic().find_friendly_id('b')
+    b.start(Parents=True)
+    assert len(a.in_progress) == 2
