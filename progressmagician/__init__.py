@@ -1,3 +1,4 @@
+from __future__ import division
 import uuid
 import arrow
 import logging
@@ -62,8 +63,10 @@ class RedisProgressManager(object):
         data = e.to_json()
         pipe.hmset(e.get_full_key(), data)
         if e.children:
-            pipe.sadd(self.children_key(e.id), *set(e.children))
-        print '---\nsetting {}: {}\n---'.format(e.get_full_key(), data)
+            children = []
+            for c in e.children:
+                children.append(c.id)
+            pipe.sadd(self.children_key(e.id), *set(children))
         if e.friendly_id:
             pipe.set(e.friendly_id, e.id)
         pipe.execute()
@@ -107,20 +110,19 @@ class TrackerBase(object):
         self.state = TrackerState()
         self.estimated_seconds = kwargs.get('EstimatedSeconds', None)
         self.parent_id = kwargs.get('ParentId', None)
-        self.is_dirty = True
         self.status_msg = None
         self.last_update = arrow.utcnow()
         self.source = kwargs.get('Source', None)
         self.is_in_progress = False
-        self.done = False
+        self.is_done = False
         self.status = 'Not started'
         self.metric = None
         self.metric_name = None
         self.metric_namespace = None
         self.finish_time = None
-        self.autosave = True
         self.db_conn = kwargs.get('DbConnection')
         self.parent = None
+        self.is_dirty = True
 
     def __str__(self):
         return self.name
@@ -169,15 +171,13 @@ class TrackerBase(object):
             for k in t.children:
                 tot = tot + self.get_stats(k)
         tot = tot + len(t.children)
-        print t.name, tot
         return tot
 
     def get_children_by_status(self, status):
         items = []
-        print 'checking {}'.format(self.friendly_id)
         if len(self.children):
             for k in self.children:
-                if status == '*' or k.status == status:
+                if len(status) == 0 or k.status in status:
                     items.append(k)
                 match = k.get_children_by_status(status)
                 if len(match) > 0:
@@ -185,12 +185,11 @@ class TrackerBase(object):
         return items
 
     def start(self, **kwargs):
-        print '{} is starting: now is {}'.format(self.id, self.is_in_progress)
         if self.is_in_progress:
             logging.warning('{} is already started. Ignoring start()'
                             .format(self.id))
             return self
-        if self.done:
+        if self.is_done:
             logging.warning('{} is done. Ignoring start()')
             return self
         m = kwargs.get('Message', None)
@@ -223,10 +222,10 @@ class TrackerBase(object):
     def elapsed_time_in_seconds(self):
         return self.state.elapsed_time_in_seconds()
 
-    def update(self):
+    def update(self, recursive=True):
         p = self.parent
         if p:
-            p.update()
+            p.update(False)
 
         if self.is_dirty:
             try:
@@ -235,6 +234,10 @@ class TrackerBase(object):
                 logging.error('Error persisting to DB: {}'.format(str(e)))
                 raise
             self.is_dirty = False
+
+        if recursive:
+            for c in self.children:
+                c.update()
         return self
 
     def to_json(self):
@@ -261,7 +264,7 @@ class TrackerBase(object):
         if self.metric:
             j['m'] = self.metric_name
         j['in_p'] = self.is_in_progress
-        j['d'] = self.done
+        j['d'] = self.is_done
         if self.status:
             j['st'] = self.status
         return json.loads(json.dumps(j))
@@ -290,7 +293,7 @@ class TrackerBase(object):
         if 's' in j.keys():
             t.with_source(j['s'], True)
         if 'd' in j.keys():
-            t.done = str(j['d']) == 'True'
+            t.is_done = str(j['d']) == 'True'
         if 'm_ns' in j.keys() and 'm' in j.keys():
             ns = j['m_ns']
             m = j['m']
@@ -373,25 +376,111 @@ class TrackerBase(object):
             self.dirty = True
         return self
 
+    def get_pct(self, m):
+        t = self.all_children_count
+        if m == 0 or t == 0:
+            return 0
+        else:
+            return float("{0:.2f}".format(m/t))
+
+    @property
+    def not_started_pct(self):
+        return self.get_pct(self.not_started_count)
+
+    @property
+    def in_progress_pct(self):
+        return self.get_pct(self.in_progress_count)
+
+    @property
+    def canceled_pct(self):
+        return self.get_pct(self.canceled_count)
+
+    @property
+    def succeeded_pct(self):
+        return self.get_pct(self.succeeded_count)
+
+    @property
+    def failed_pct(self):
+        return self.get_pct(self.failed_count)
+
+    @property
+    def done_pct(self):
+        return self.get_pct(self.done_count)
+
+    @property
+    def paused_pct(self):
+        return self.get_pct(self.paused_count)
+
+    @property
+    def not_started_count(self):
+        return len(self.not_started)
+
+    @property
+    def in_progress_count(self):
+        return len(self.in_progress)
+
+    @property
+    def canceled_count(self):
+        return len(self.canceled)
+
+    @property
+    def succeeded_count(self):
+        return len(self.succeeded)
+
+    @property
+    def failed_count(self):
+        return len(self.failed)
+
+    @property
+    def done_count(self):
+        return len(self.done)
+
+    @property
+    def paused_count(self):
+        return len(self.paused)
+
     @property
     def not_started(self):
-        return self.get_children_by_status('Not started')
+        return self.get_children_by_status(['Not started'])
 
     @property
     def in_progress(self):
-        return self.get_children_by_status('In Progress')
+        return self.get_children_by_status(['In Progress'])
 
     @property
     def canceled(self):
-        return self.get_children_by_status('Canceled')
+        return self.get_children_by_status(['Canceled'])
+
+    @property
+    def succeeded(self):
+        return self.get_children_by_status(['Succeeded'])
+
+    @property
+    def failed(self):
+        return self.get_children_by_status(['Failed'])
+
+    @property
+    def done(self):
+        return self.get_children_by_status(['Succeeded', 'Canceled', 'Failed'])
+
+    @property
+    def not_done(self):
+        return self.get_children_by_status(['In Progress', 'Paused'])
+
+    @property
+    def paused(self):
+        return self.get_children_by_status(['Paused'])
 
     @property
     def all_children(self):
-        return self.get_children_by_status('*')
+        return self.get_children_by_status([])
+
+    @property
+    def all_children_count(self):
+        return len(self.all_children)
 
     def find_id(self, f):
         found = None
-        print 'finding id {} at {}'.format(f, self.id)
         for c in self.children:
             if c.id == f:
                 found = c
@@ -418,7 +507,7 @@ class TrackerBase(object):
 class ProgressTracker(TrackerBase):
     def __init__(self, **kwargs):
         self.start_time = kwargs.get('StartTime', arrow.utcnow().isoformat())
-        self.done = False
+        self.is_done = False
         super(ProgressTracker, self).__init__(**kwargs)
 
     def with_name(self, n, clean=False):
@@ -459,13 +548,13 @@ class ProgressTracker(TrackerBase):
         return self
 
     def mark_done(self, status, m=None):
-        if self.done:
+        if self.is_done:
             logging.warning('Already done: {}'.self.id)
             return self
         if m:
             self.with_status_msg(m)
         self.with_finish_time(arrow.utcnow())
-        self.done = True
+        self.is_done = True
         self.is_in_progress = False
         self.status = status
         self.is_dirty = True
@@ -473,7 +562,7 @@ class ProgressTracker(TrackerBase):
         return self
 
     def succeed(self, **kwargs):
-        if self.status == 'Succeeeded' and self.done and \
+        if self.status == 'Succeeeded' and self.is_done and \
                           not self.is_in_progress:
             logging.warning('Already succeeded {}'.self.id)
             return self
@@ -482,7 +571,8 @@ class ProgressTracker(TrackerBase):
         return self
 
     def cancel(self, **kwargs):
-        if self.status == 'Canceled' and self.done and not self.is_in_progress:
+        if self.status == 'Canceled' and self.is_done and \
+                not self.is_in_progress:
             logging.warning('Already canceled: {}'.self.id)
             return self
         m = kwargs.get('Message', None)
@@ -490,7 +580,8 @@ class ProgressTracker(TrackerBase):
         return self
 
     def fail(self, **kwargs):
-        if self.status == 'Failed' and self.done and not self.is_in_progress:
+        if self.status == 'Failed' and self.is_done and \
+                not self.is_in_progress:
             logging.warning('Already failed: {}'.self.id)
             return self
         m = kwargs.get('Message', None)
@@ -512,10 +603,5 @@ class ProgressMagician(TrackerBase):
         return self.db_conn.get_all_by_id(id)
 
     def update_all(self):
-        for i in self.trackers.keys():
-            t = self.trackers[i]
-            if self.trackers[i].is_dirty:
-                t.update()
-        if self.is_dirty:
-            self.update()
+        self.update(True)
         return self

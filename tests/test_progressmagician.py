@@ -262,7 +262,7 @@ def test_success_logs_two_metrics(s_mock, c_mock):
     time.sleep(.5)
     a.succeed()
     assert s_mock.call_count == 1 and c_mock.call_count == 1 and \
-        a.status == 'Succeeded' and a.done and not a.is_in_progress and \
+        a.status == 'Succeeded' and a.is_done and not a.is_in_progress and \
         a.finish_time
 
 
@@ -288,7 +288,7 @@ def test_failed_logs_two_metrics(s_mock, c_mock):
     time.sleep(.5)
     a.fail()
     assert s_mock.call_count == 1 and c_mock.call_count == 1 and \
-        a.status == 'Failed' and a.done and not a.is_in_progress and \
+        a.status == 'Failed' and a.is_done and not a.is_in_progress and \
         a.finish_time
 
 
@@ -314,7 +314,7 @@ def test_canceled_logs_two_metrics(s_mock, c_mock):
     time.sleep(.5)
     a.cancel()
     assert s_mock.call_count == 1 and c_mock.call_count == 1 and \
-        a.status == 'Canceled' and a.done and not a.is_in_progress and \
+        a.status == 'Canceled' and a.is_done and not a.is_in_progress and \
         a.finish_time
 
 
@@ -340,19 +340,19 @@ def test_can_convert_start_time_from_json():
 def test_can_convert_in_canceled_status_from_json():
     a = setup_basic().find_friendly_id('a').cancel()
     t = TrackerBase.from_json(a.id, a.to_json())
-    assert t.status == 'Canceled' and t.done and not t.is_in_progress
+    assert t.status == 'Canceled' and t.is_done and not t.is_in_progress
 
 
 def test_can_convert_in_failed_status_from_json():
     a = setup_basic().find_friendly_id('a').fail()
     t = TrackerBase.from_json(a.id, a.to_json())
-    assert t.status == 'Failed' and t.done and not t.is_in_progress
+    assert t.status == 'Failed' and t.is_done and not t.is_in_progress
 
 
 def test_can_convert_in_succeed_status_from_json():
     a = setup_basic().find_friendly_id('a').succeed()
     t = TrackerBase.from_json(a.id, a.to_json())
-    assert t.status == 'Succeeded' and t.done and not t.is_in_progress
+    assert t.status == 'Succeeded' and t.is_done and not t.is_in_progress
 
 
 def get_by_id_side_effect(id):
@@ -441,7 +441,7 @@ def test_can_get_in_progress_trackers():
     a = pm.find_friendly_id('a')
     c = pm.find_friendly_id('c')
     c.start(Parents=True)
-    assert len(a.in_progress) == 2
+    assert a.in_progress_count == 2
 
 
 def test_can_get_canceled_trackers():
@@ -449,19 +449,30 @@ def test_can_get_canceled_trackers():
     a = pm.find_friendly_id('a')
     c = pm.find_friendly_id('c')
     c.start(Parents=True).cancel()
-    assert len(a.canceled) == 1
+    assert a.canceled_count == 1
 
 
 def test_no_started_returns_0_canceled_trackers():
     pm = setup_basic()
-    assert len(pm.not_started) == 3
+    assert pm.not_started_count == 3
 
 
 def test_no_in_progress_returns_0_in_progress_trackers():
     pm = setup_basic()
-    assert len(pm.in_progress) == 0
+    assert pm.in_progress_count == 0
 
 
 def test_no_canceled_returns_0_canceled_trackers():
     pm = setup_basic()
-    assert len(pm.canceled) == 0
+    assert pm.canceled_count == 0
+
+
+def test_can_get_started_pct_correctly():
+    pm = setup_basic()
+    pm.find_friendly_id('a').start(Parents=True)
+    assert pm.in_progress_pct == .33
+
+
+def test_can_get_not_started_pct_correctly():
+    pm = setup_basic()
+    assert pm.not_started_pct == 1
