@@ -87,16 +87,12 @@ class RedisProgressManager(object):
         j = self.get_by_id(id)
         if j:
             t = TrackerBase.from_json(id, j)
-            t.trackers = self.trackers
-            c = self.get_children(id)
-            if c:
-                t.children = c
             t.db_conn = self
-            self.trackers[id] = t
-
-            if len(t.children) > 0:
-                for c in t.children:
-                    self.get_all_by_id(c)
+            children = self.get_children(id)
+            if children:
+                for c in children:
+                    t.with_tracker(self.get_all_by_id(c))
+        return t
 
     def inc_progress(self, e, value=1):
         self.redis.hincrby(e.get_full_key(), "curr_prog", value)
@@ -124,6 +120,7 @@ class TrackerBase(object):
         self.finish_time = None
         self.autosave = True
         self.db_conn = kwargs.get('DbConnection')
+        self.parent = None
 
     def __str__(self):
         return self.name
@@ -175,20 +172,17 @@ class TrackerBase(object):
         print t.name, tot
         return tot
 
-    def get_children_by_status(self, status, id=None):
-        c = []
-        t = self.main.trackers[id]
-        if t.status == status:
-            print 'here', t.friendly_id
-            c.append(t)
-        if len(t.children):
-            for k in t.children:
-                c.append(self.get_children_by_status(status, k))
-        return c
-
-    def parent(self):
-        if self.parent_id in self.trackers.keys():
-            return self.trackers[self.parent_id]
+    def get_children_by_status(self, status):
+        items = []
+        print 'checking {}'.format(self.friendly_id)
+        if len(self.children):
+            for k in self.children:
+                if status == '*' or k.status == status:
+                    items.append(k)
+                match = k.get_children_by_status(status)
+                if len(match) > 0:
+                    items.extend(match)
+        return items
 
     def start(self, **kwargs):
         print '{} is starting: now is {}'.format(self.id, self.is_in_progress)
@@ -204,9 +198,9 @@ class TrackerBase(object):
             self.with_status_msg(m)
         self.start_time = kwargs.get('StartTime', arrow.utcnow())
         if bool(kwargs.get('Parents', False)):
-            if self.parent():
-                self.parent().start(Parents=True)
-        if self.parent() and not self.parent().is_in_progress:
+            if self.parent:
+                self.parent.start(Parents=True)
+        if self.parent and not self.parent.is_in_progress:
             raise Exception("You can't start a tracker if the parent isn't " +
                             'started')
         self.state.start(StartTime=self.start_time,
@@ -230,8 +224,8 @@ class TrackerBase(object):
         return self.state.elapsed_time_in_seconds()
 
     def update(self):
-        if self.parent_id:
-            p = self.trackers[self.parent_id]
+        p = self.parent
+        if p:
             p.update()
 
         if self.is_dirty:
@@ -304,7 +298,14 @@ class TrackerBase(object):
         t.is_dirty = False
         return t
 
+    def with_tracker(self, t):
+        t.db_conn = self.db_conn
+        t.parent = self
+        self.children.append(t)
+        return self
+
     def with_child(self, c):
+        c.parent = self
         if self.children and c in self.children:
             return self
         self.is_dirty = True
@@ -374,11 +375,45 @@ class TrackerBase(object):
 
     @property
     def not_started(self):
-        return self.get_children_by_status('Not started', self.id)
+        return self.get_children_by_status('Not started')
 
     @property
     def in_progress(self):
-        return self.get_children_by_status('In Progress', self.id)
+        return self.get_children_by_status('In Progress')
+
+    @property
+    def canceled(self):
+        return self.get_children_by_status('Canceled')
+
+    @property
+    def all_children(self):
+        return self.get_children_by_status('*')
+
+    def find_id(self, f):
+        found = None
+        print 'finding id {} at {}'.format(f, self.id)
+        for c in self.children:
+            if c.id == f:
+                found = c
+            else:
+                found = c.find_id(f)
+            if found:
+                break
+
+        return found
+
+    def find_friendly_id(self, f):
+        found = None
+        for c in self.children:
+            if c.friendly_id == f:
+                found = c
+            else:
+                found = c.find_friendly_id(f)
+            if found:
+                break
+
+        return found
+
 
 class ProgressTracker(TrackerBase):
     def __init__(self, **kwargs):
@@ -474,31 +509,7 @@ class ProgressMagician(TrackerBase):
 
     def load(self, id):
         self.id = id
-        self.db_conn.get_all_by_id(id)
-        self.main = self.trackers[id]
-
-    def with_tracker(self, t):
-        t.db_conn = self.db_conn
-        if not t.parent_id:
-            t.parent_id = self.id
-        t.trackers = self.trackers
-        t.main = self
-        p = self.trackers[t.parent_id]
-        if t.id not in p.children:
-            p.with_child(t.id)
-        self.trackers[t.id] = t
-        return self
-
-    def find_friendly_id(self, fk):
-        for k in self.trackers.keys():
-            if self.trackers[k].friendly_id == fk:
-                return self.trackers[k]
-        return None
-
-    def find_id(self, id):
-        if id in self.trackers.keys():
-            return self.trackers[id]
-        return None
+        return self.db_conn.get_all_by_id(id)
 
     def update_all(self):
         for i in self.trackers.keys():

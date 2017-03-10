@@ -102,16 +102,18 @@ def test_can_create_rollup_event():
 def test_can_total_progress_with_child_events():
     pm = ProgressMagician(DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='abc')
-    b = ProgressTracker(Name='CreateFolder', ParentId=a.id)
-    c = ProgressTracker(Name='CopyFiles', ParentId=b.id)
-    d = ProgressTracker(Name='SendEmail', ParentId=c.id)
-    pm.with_tracker(a).with_tracker(b).with_tracker(c).with_tracker(d)
-    assert pm.count_children() == 4
+    b = ProgressTracker(Name='CreateFolder')
+    c = ProgressTracker(Name='CopyFiles')
+    d = ProgressTracker(Name='SendEmail')
+    a.with_tracker(b)
+    b.with_tracker(c).with_tracker(d)
+    pm.with_tracker(a)
+    assert len(pm.all_children) == 4
 
 
 def test_can_total_progress_off_one_branch():
     a = setup_basic().find_friendly_id('a')
-    assert a.count_children() == 2
+    assert len(a.all_children) == 2
 
 
 def setup_basic():
@@ -119,9 +121,12 @@ def setup_basic():
                           DbConnection=MockProgressManager(),
                           EstimatedSeconds=10)
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
-    b = ProgressTracker(Name='CreateFolder', ParentId=a.id, FriendlyId='b')
-    c = ProgressTracker(Name='CopyFiles', ParentId=b.id, FriendlyId='c')
-    pm.with_tracker(a).with_tracker(b).with_tracker(c)
+    b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
+    c = ProgressTracker(Name='CopyFiles', FriendlyId='c')
+    assert a.friendly_id == 'a'
+    a.with_tracker(b)
+    b.with_tracker(c)
+    pm.with_tracker(a)
     return pm
 
 
@@ -137,12 +142,12 @@ def test_find_a_tracker_by_friendly_id():
 
 def test_find_a_parent_tracker():
     b = setup_basic().find_friendly_id('b')
-    assert b.parent().friendly_id == 'a'
+    assert b.parent.friendly_id == 'a'
 
 
 def test_start_tracker_sets_in_progress():
     t = setup_basic().find_friendly_id('a')
-    t.parent().start()
+    t.parent.start()
     t.start()
     assert t.is_in_progress
 
@@ -158,7 +163,7 @@ def test_starting_tracker_without_starting_parent_throws_error():
 
 def test_start_tracker_starts_timer():
     t = setup_basic().find_friendly_id('a')
-    t.parent().start()
+    t.parent.start()
     t.start()
     time.sleep(2.1)
     assert t.elapsed_time_in_seconds() > 2 and \
@@ -234,7 +239,7 @@ def test_child_object_saves_parent_object(db_mock):
 def test_child_update_clears_dirty_flag():
     a = setup_basic().find_friendly_id('a')
     a.update()
-    assert not a.is_dirty and not a.parent().is_dirty
+    assert not a.is_dirty and not a.parent.is_dirty
 
 
 def test_with_metric_sets_has_metric_flag():
@@ -352,21 +357,21 @@ def test_can_convert_in_succeed_status_from_json():
 
 def get_by_id_side_effect(id):
     items = json.loads(not_started_json)
-    print 'getting ' + id
     if id in items.keys():
-        print 'here!!!!'
-        print items[id]
         return items[id]
     return None
 
 
 def children_side_effect(id):
     if id == '94a52a41-bf9e-43e3-9650-859f7c263dc8':
+        return ['7acfd432-8392-49d3-867c-d85bb3824e61']
+
+    if id == '7acfd432-8392-49d3-867c-d85bb3824e61':
         return ['582ab745-2929-47a1-b026-6a09db268688',
-                '7acfd432-8392-49d3-867c-d85bb3824e61',
                 'c31405c9-d44b-4c28-b4ca-7008de4e468a',
                 '6cf22931-d571-41f9-b1db-b47740e680f3',
                 '039fe353-2c01-49f4-a743-b09c02c9f683']
+
     return None
 
 
@@ -376,8 +381,8 @@ def test_can_convert_from_db(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
     pm = ProgressMagician(DbConnection=RedisProgressManager())
-    pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
-    assert pm.count_children() == 5
+    pm = pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
+    assert len(pm.all_children) == 5
 
 
 @patch('progressmagician.RedisProgressManager.get_by_id')
@@ -386,12 +391,13 @@ def test_can_start_all_parents(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
     pm = ProgressMagician(DbConnection=RedisProgressManager())
-    pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
+    pm = pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
     t = pm.find_id('039fe353-2c01-49f4-a743-b09c02c9f683')
+    assert t
     t.start(Parents=True)
-    print t.status
-    assert t.parent().status == 'In Progress'
-    assert t.parent().parent().status == 'In Progress'
+    assert t.parent.status == 'In Progress'
+    print t.parent.id
+    assert t.parent.parent.status == 'In Progress'
 
 
 def test_getting_elapsed_time_at_parent_returns_longest_child():
@@ -430,13 +436,32 @@ def test_succeed_with_status_msg_updates_msg():
     assert a.start(Parents=True).succeed(Message=s).status_msg == s
 
 
-def test_can_get_not_started_trackers():
-    a = setup_basic().find_friendly_id('a')
-    assert len(a.not_started) == 2
-
-
 def test_can_get_in_progress_trackers():
-    a = setup_basic().find_friendly_id('a')
-    b = setup_basic().find_friendly_id('b')
-    b.start(Parents=True)
+    pm = setup_basic()
+    a = pm.find_friendly_id('a')
+    c = pm.find_friendly_id('c')
+    c.start(Parents=True)
     assert len(a.in_progress) == 2
+
+
+def test_can_get_canceled_trackers():
+    pm = setup_basic()
+    a = pm.find_friendly_id('a')
+    c = pm.find_friendly_id('c')
+    c.start(Parents=True).cancel()
+    assert len(a.canceled) == 1
+
+
+def test_no_started_returns_0_canceled_trackers():
+    pm = setup_basic()
+    assert len(pm.not_started) == 3
+
+
+def test_no_in_progress_returns_0_in_progress_trackers():
+    pm = setup_basic()
+    assert len(pm.in_progress) == 0
+
+
+def test_no_canceled_returns_0_canceled_trackers():
+    pm = setup_basic()
+    assert len(pm.canceled) == 0
