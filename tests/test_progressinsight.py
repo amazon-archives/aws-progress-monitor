@@ -1,6 +1,6 @@
 import uuid
-from progressmagician import ProgressTracker, ProgressMagician, TrackerBase
-from progressmagician import RedisProgressManager
+from progressinsight import ProgressTracker, ProgressInsight, TrackerBase
+from progressinsight import RedisProgressManager
 import time
 import pytest
 from mock import patch
@@ -100,7 +100,7 @@ def test_can_create_rollup_event():
 
 
 def test_can_total_progress_with_child_events():
-    pm = ProgressMagician(DbConnection=MockProgressManager())
+    pm = ProgressInsight(DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='abc')
     b = ProgressTracker(Name='CreateFolder')
     c = ProgressTracker(Name='CopyFiles')
@@ -117,22 +117,22 @@ def test_can_total_progress_off_one_branch():
 
 
 def setup_basic():
-    pm = ProgressMagician(Name='MainWorkflow',
-                          DbConnection=MockProgressManager())
+    pm = ProgressInsight(Name='MainWorkflow',
+                         DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
     c = ProgressTracker(Name='CopyFiles', FriendlyId='c',
                         EstimatedSeconds=10)
     assert a.friendly_id == 'a'
+    pm.with_tracker(a)
     a.with_tracker(b)
     b.with_tracker(c)
-    pm.with_tracker(a)
     return pm
 
 
 def setup_basic_multi_children():
-    pm = ProgressMagician(Name='MainWorkflow',
-                          DbConnection=MockProgressManager())
+    pm = ProgressInsight(Name='MainWorkflow',
+                         DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
     c = ProgressTracker(Name='CopyFiles', FriendlyId='c',
@@ -157,8 +157,8 @@ def setup_basic_multi_children():
 
 
 def setup_parallel():
-    pm = ProgressMagician(Name='MainWorkflow',
-                          DbConnection=MockProgressManager())
+    pm = ProgressInsight(Name='MainWorkflow',
+                         DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a',
                         HasParallelChildren=True)
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
@@ -269,24 +269,24 @@ def test_root_full_key_is_just_id():
     assert pm.get_full_key() == pm.id
 
 
-@patch('tests.test_progressmagician.MockProgressManager')
+@patch('tests.test_progressinsight.MockProgressManager')
 def test_update_calls_db_update(db_mock):
     pm = setup_basic()
     pm.update()
     assert db_mock.called_once()
 
 
-@patch('tests.test_progressmagician.MockProgressManager.update_tracker')
+@patch('tests.test_progressinsight.MockProgressManager.update_tracker')
 def test_multiple_update_calls_db_update_only_once(db_mock):
     pm = setup_basic()
     pm.update().update()
     assert db_mock.called_once()
 
 
-@patch('tests.test_progressmagician.MockProgressManager.update_tracker')
+@patch('tests.test_progressinsight.MockProgressManager.update_tracker')
 def test_child_object_saves_parent_object(db_mock):
     a = setup_basic().find_friendly_id('a')
-    a.update()
+    a.update(False)
     assert db_mock.call_count == 2
 
 
@@ -429,22 +429,22 @@ def children_side_effect(id):
     return None
 
 
-@patch('progressmagician.RedisProgressManager.get_by_id')
-@patch('progressmagician.RedisProgressManager.get_children')
+@patch('progressinsight.RedisProgressManager.get_by_id')
+@patch('progressinsight.RedisProgressManager.get_children')
 def test_can_convert_from_db(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
-    pm = ProgressMagician(DbConnection=RedisProgressManager())
+    pm = ProgressInsight(DbConnection=RedisProgressManager())
     pm = pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
     assert len(pm.all_children) == 5
 
 
-@patch('progressmagician.RedisProgressManager.get_by_id')
-@patch('progressmagician.RedisProgressManager.get_children')
+@patch('progressinsight.RedisProgressManager.get_by_id')
+@patch('progressinsight.RedisProgressManager.get_children')
 def test_can_start_all_parents(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
-    pm = ProgressMagician(DbConnection=RedisProgressManager())
+    pm = ProgressInsight(DbConnection=RedisProgressManager())
     pm = pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
     t = pm.find_id('039fe353-2c01-49f4-a743-b09c02c9f683')
     assert t

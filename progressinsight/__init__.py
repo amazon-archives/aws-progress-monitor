@@ -287,6 +287,7 @@ class TrackerBase(object):
         if self.metric:
             j['m'] = self.metric_name
         j['in_p'] = self.is_in_progress
+        j['has_p'] = self.has_parallel_children
         j['d'] = self.is_done
         if self.status:
             j['st'] = self.status
@@ -317,6 +318,8 @@ class TrackerBase(object):
             t.with_source(j['s'], True)
         if 'd' in j.keys():
             t.is_done = str(j['d']) == 'True'
+        if 'has_p' in j.keys():
+            t.has_parallel_children = str(j['has_p']) == 'True'
         if 'm_ns' in j.keys() and 'm' in j.keys():
             ns = j['m_ns']
             m = j['m']
@@ -612,11 +615,11 @@ class ProgressTracker(TrackerBase):
         return self
 
 
-class ProgressMagician(TrackerBase):
+class ProgressInsight(TrackerBase):
     def __init__(self, **kwargs):
         self.name = kwargs.get('Name')
         self.trackers = {}
-        super(ProgressMagician, self).__init__(**kwargs)
+        super(ProgressInsight, self).__init__(**kwargs)
         self.trackers[self.id] = self
         self.main = self.trackers[self.id]
         self.db_conn.trackers = self.trackers
