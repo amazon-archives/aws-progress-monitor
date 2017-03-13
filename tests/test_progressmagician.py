@@ -118,14 +118,68 @@ def test_can_total_progress_off_one_branch():
 
 def setup_basic():
     pm = ProgressMagician(Name='MainWorkflow',
-                          DbConnection=MockProgressManager(),
-                          EstimatedSeconds=10)
+                          DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
-    c = ProgressTracker(Name='CopyFiles', FriendlyId='c')
+    c = ProgressTracker(Name='CopyFiles', FriendlyId='c',
+                        EstimatedSeconds=10)
     assert a.friendly_id == 'a'
     a.with_tracker(b)
     b.with_tracker(c)
+    pm.with_tracker(a)
+    return pm
+
+
+def setup_basic_multi_children():
+    pm = ProgressMagician(Name='MainWorkflow',
+                          DbConnection=MockProgressManager())
+    a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
+    b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
+    c = ProgressTracker(Name='CopyFiles', FriendlyId='c',
+                        EstimatedSeconds=10)
+    b1 = ProgressTracker(Name='CreateFolder', FriendlyId='br1')
+    c1 = ProgressTracker(Name='CopyFiles', FriendlyId='c1',
+                         EstimatedSeconds=11)
+    b2 = ProgressTracker(Name='CreateFolder', FriendlyId='b2')
+    c2 = ProgressTracker(Name='FileStuff', FriendlyId='c2')
+    d2 = ProgressTracker(Name='CopyFiles', FriendlyId='d2',
+                         EstimatedSeconds=12)
+    assert a.friendly_id == 'a'
+    b.with_tracker(c)
+    b1.with_tracker(c1)
+    b2.with_tracker(c2)
+    c2.with_tracker(d2)
+    a.with_tracker(b)
+    a.with_tracker(b1)
+    a.with_tracker(b2)
+    pm.with_tracker(a)
+    return pm
+
+
+def setup_parallel():
+    pm = ProgressMagician(Name='MainWorkflow',
+                          DbConnection=MockProgressManager())
+    a = ProgressTracker(Name='CopyFiles', FriendlyId='a',
+                        HasParallelChildren=True)
+    b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
+    c = ProgressTracker(Name='CopyFiles', FriendlyId='c',
+                        EstimatedSeconds=10)
+    b1 = ProgressTracker(Name='CreateFolder', FriendlyId='br1')
+    c1 = ProgressTracker(Name='CopyFiles', FriendlyId='c1',
+                         EstimatedSeconds=11)
+    b2 = ProgressTracker(Name='CreateFolder', FriendlyId='b2')
+    c2 = ProgressTracker(Name='CopyFiles', FriendlyId='c2',
+                         EstimatedSeconds=12)
+    d2 = ProgressTracker(Name='CopyFiles', FriendlyId='c2',
+                         EstimatedSeconds=12)
+    assert a.friendly_id == 'a'
+    b.with_tracker(c)
+    b1.with_tracker(c1)
+    b2.with_tracker(c2)
+    c2.with_tracker(d2)
+    a.with_tracker(b)
+    a.with_tracker(b1)
+    a.with_tracker(b2)
     pm.with_tracker(a)
     return pm
 
@@ -476,3 +530,18 @@ def test_can_get_started_pct_correctly():
 def test_can_get_not_started_pct_correctly():
     pm = setup_basic()
     assert pm.not_started_pct == 1
+
+
+def test_can_get_total_estimate():
+    pm = setup_basic()
+    assert pm.total_estimate == 10
+
+
+def test_can_get_parallel_estimate():
+    pm = setup_parallel()
+    assert pm.total_estimate == 12
+
+
+def test_get_total_estimate_with_sub_items():
+    pm = setup_basic_multi_children()
+    assert pm.total_estimate == 33

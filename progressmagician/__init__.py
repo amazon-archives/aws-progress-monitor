@@ -108,7 +108,7 @@ class TrackerBase(object):
         self.name = kwargs.get('Name')
         self.children = []
         self.state = TrackerState()
-        self.estimated_seconds = kwargs.get('EstimatedSeconds', None)
+        self.estimated_seconds = kwargs.get('EstimatedSeconds', 0)
         self.parent_id = kwargs.get('ParentId', None)
         self.status_msg = None
         self.last_update = arrow.utcnow()
@@ -123,6 +123,7 @@ class TrackerBase(object):
         self.db_conn = kwargs.get('DbConnection')
         self.parent = None
         self.is_dirty = True
+        self.has_parallel_children = kwargs.get('HasParallelChildren', False)
 
     def __str__(self):
         return self.name
@@ -172,6 +173,28 @@ class TrackerBase(object):
                 tot = tot + self.get_stats(k)
         tot = tot + len(t.children)
         return tot
+
+    @property
+    def total_estimate(self):
+        if self.has_parallel_children:
+            longest = 0
+
+        if len(self.children):
+            secs = 0
+            for k in self.children:
+                tot = k.total_estimate
+                if self.has_parallel_children and tot > longest:
+                    longest = tot
+                else:
+                    secs = secs + tot
+        else:
+            print self.estimated_seconds, self.friendly_id
+            return self.estimated_seconds
+
+        if self.has_parallel_children:
+            return longest
+        else:
+            return secs
 
     def get_children_by_status(self, status):
         items = []
