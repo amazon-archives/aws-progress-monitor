@@ -240,7 +240,7 @@ class TrackerBase(object):
         return self
 
     def remaining_time_in_seconds(self):
-        return self.state.remaining_time_in_seconds()
+        return self.total_estimate - self.elapsed_time_in_seconds()
 
     def elapsed_time_in_seconds(self):
         return self.state.elapsed_time_in_seconds()
