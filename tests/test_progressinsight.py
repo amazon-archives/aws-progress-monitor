@@ -244,18 +244,20 @@ def test_can_set_status():
     assert a.status_msg == 'test status'
 
 
-def test_no_estimate_returns_none_remaining_time():
-    a = setup_basic()
-    a.start()
-    time.sleep(1)
-    assert a.remaining_time_in_seconds() is None
-
-
-def test_remaining_returns_actual_minus_estimate():
+def test_estimate_returns_correct_time():
     pm = setup_basic()
     pm.start()
-    time.sleep(1.5)
-    assert pm.remaining_time_in_seconds() < 9
+    time.sleep(1)
+    assert pm.remaining_time_in_seconds() > 8 and \
+        pm.remaining_time_in_seconds() < 10
+
+
+def test_nested_estimate_returns_actual_minus_estimate():
+    pm = setup_basic_multi_children()
+    pm.start()
+    time.sleep(2.5)
+    assert pm.remaining_time_in_seconds() < 33 and \
+        pm.remaining_time_in_seconds() > 30
 
 
 def test_can_get_full_key():

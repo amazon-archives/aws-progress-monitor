@@ -188,7 +188,6 @@ class TrackerBase(object):
                 else:
                     secs = secs + tot
         else:
-            print self.estimated_seconds, self.friendly_id
             return self.estimated_seconds
 
         if self.has_parallel_children:
@@ -239,9 +238,11 @@ class TrackerBase(object):
                 self.dirty = True
         return self
 
+    @property
     def remaining_time_in_seconds(self):
-        return self.total_estimate - self.elapsed_time_in_seconds()
+        return self.total_estimate - self.elapsed_time_in_seconds
 
+    @property
     def elapsed_time_in_seconds(self):
         return self.state.elapsed_time_in_seconds()
 
@@ -529,35 +530,6 @@ class TrackerBase(object):
 
         return found
 
-
-class ProgressTracker(TrackerBase):
-    def __init__(self, **kwargs):
-        self.start_time = kwargs.get('StartTime', arrow.utcnow().isoformat())
-        self.is_done = False
-        super(ProgressTracker, self).__init__(**kwargs)
-
-    def with_name(self, n, clean=False):
-        if not self.name == n:
-            self.name = n
-            if not clean:
-                self.dirty = True
-        return self
-
-    def with_message(self, m):
-        if not self.message == m:
-            self.message = m
-            self.dirty = True
-        return self
-
-    def with_timestamp(self, m):
-        if not m:
-            m = arrow.utcnow().isoformat()
-        self.dirty = True
-        return self
-
-    def has_metric(self):
-        return self.metric and self.metric_name
-
     def log_done(self):
         if not self.has_metric:
             logging.debug('No metric defined for {}'.format(self.id))
@@ -615,7 +587,37 @@ class ProgressTracker(TrackerBase):
         return self
 
 
-class ProgressInsight(TrackerBase):
+class ProgressTracker(TrackerBase):
+    def __init__(self, **kwargs):
+        self.start_time = kwargs.get('StartTime', arrow.utcnow().isoformat())
+        self.is_done = False
+        super(ProgressTracker, self).__init__(**kwargs)
+
+    def with_name(self, n, clean=False):
+        if not self.name == n:
+            self.name = n
+            if not clean:
+                self.dirty = True
+        return self
+
+    def with_message(self, m):
+        if not self.message == m:
+            self.message = m
+            self.dirty = True
+        return self
+
+    def with_timestamp(self, m):
+        if not m:
+            m = arrow.utcnow().isoformat()
+        self.dirty = True
+        return self
+
+    @property
+    def has_metric(self):
+        return self.metric and self.metric_name
+
+
+class ProgressInsight(ProgressTracker):
     def __init__(self, **kwargs):
         self.name = kwargs.get('Name')
         self.trackers = {}
