@@ -26,6 +26,7 @@ In the simplest of terms, `ProgressInsight` is a nested set of `ProgressTracker`
 ### Examples
 #### Example: Single Task
 This is the most basic of basic applications. We create a `ProgressInsight` object (which is a `ProgressTracker`), which is required to create a new workflow tracker. Then we create another tracker called `SingleTask`. Each tracker has an `id` property that is an automatically generated `uuid`. If you want to use your own unique ID as well (from some other process), you can pass in a `FriendlyId` as well, which is accessible by the `friendly_id` property. All we need to do is call `with_tracker` and the `SingleTask` tracker is attached to the root workflow.
+
 ```sh
 import redis
 import time
