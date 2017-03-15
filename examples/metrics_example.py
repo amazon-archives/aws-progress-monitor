@@ -5,8 +5,8 @@ pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 rpm = RedisProgressManager(RedisConnection=r)
 pm = ProgressInsight(DbConnection=rpm)
-c = ProgressTracker(Name='ConvertVMWorkflow').with_metric(Namespace='test',
-                                                          Metric='convert_vm')
+c = ProgressTracker(Name='TestWorkflow').with_metric(Namespace='dev_testing',
+                                                          Metric='OS/Startup')
 c.metric.with_dimension('linux_flavor', 'redhat') \
         .with_dimension('version', '6.8')
 pm.with_tracker(c)

@@ -387,3 +387,38 @@ print "Total estimated seconds: {}".format(root_wf.total_estimate)
 ```sh
 Total estimated seconds: 50
 ```
+#### Example: Automatically logging metrics
+One of the really valuable aspects of `ProgressInsight` is the ability to log performance metrics to CloudWatch. This allows `ProgressInsight` to be not only a real-time progress visibility tool, but also a performance insight tool as well. All you need to do is attach a metric namespace and metric name to any tracker you want metrics and `ProgressInsight` does the rest. When you start and stop a tracker, the timing is automatically logged to CloudWatch with the metric name you provide. Additionally, if you want more dimensions to the metrics, you can easily add those as well to generate richer data.
+
+```sh
+import redis
+import time
+from progressinsight import RedisProgressManager, ProgressInsight, ProgressTracker
+pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
+r = redis.Redis(connection_pool=pool)
+rpm = RedisProgressManager(RedisConnection=r)
+pm = ProgressInsight(DbConnection=rpm)
+
+# Create a tracker and attach to the 'OS/Startup' metric in the 'dev_testing' namespace 
+c = ProgressTracker(Name='TestWorkflow').with_metric(Namespace='dev_testing',
+                                                          Metric='OS/Startup')
+
+# adding Linux flavor and version to create a few richer metrics
+c.metric.with_dimension('linux_flavor', 'redhat') \
+        .with_dimension('version', '6.8')
+        
+# notice that we no longer refer to the metrics -- it's all behind-the-scenes now
+pm.with_tracker(c)
+pm.update_all()
+c.start(Parents=True)
+pm.update_all()
+print 'sleeping'
+time.sleep(2)
+
+# this command will automatically check if there is a metrics and log to CloudWatch
+c.succeed()
+pm.update_all()
+print c.elapsed_time_in_seconds
+print c.start_time
+print c.finish_time
+

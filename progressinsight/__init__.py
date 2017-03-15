@@ -536,13 +536,13 @@ class TrackerBase(object):
             return self
         try:
             self.metric.seconds(MetricName=self.metric_name,
-                                Value=self.elapsed_time_in_seconds())
+                                Value=self.elapsed_time_in_seconds)
             self.metric.count(MetricName="{}/{}"
                               .format(self.metric_name, self.status))
         except Exception as e:
             logging.warn('Error logging done metric: {}\n{}:{}'
                          .format(str(e), self.metric_name,
-                                 self.elapsed_time_in_seconds()))
+                                 self.elapsed_time_in_seconds))
         return self
 
     def mark_done(self, status, m=None):
