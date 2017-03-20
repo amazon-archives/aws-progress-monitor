@@ -105,7 +105,7 @@ class TrackerBase(object):
     def __init__(self, **kwargs):
         self.friendly_id = kwargs.get('FriendlyId', None)
         self.id = kwargs.get('Id', str(uuid.uuid4()))
-        self.name = kwargs.get('Name')
+        self.name = kwargs.get('Name', self.id)
         self.children = []
         self.state = TrackerState()
         self.estimated_seconds = kwargs.get('EstimatedSeconds', 0)
@@ -127,6 +127,20 @@ class TrackerBase(object):
 
     def __str__(self):
         return self.name
+
+    def print_node(self, lvl=0):
+        if lvl > 0:
+            spc = lvl-1
+            print '{}|'.format(' '*spc*2)
+            print '{}|'.format(' '*spc*2)
+            print '{}{}{}'.format(' '*spc*2, '-'*2, self.name)
+        else:
+            print self.name
+        for child in self.children:
+            child.print_node(lvl+1)
+
+    def print_tree(self):
+        self.print_node()
 
     def get_tracker_progress_total(self, pe=None):
         t = 0
@@ -619,7 +633,6 @@ class ProgressTracker(TrackerBase):
 
 class ProgressInsight(ProgressTracker):
     def __init__(self, **kwargs):
-        self.name = kwargs.get('Name')
         self.trackers = {}
         super(ProgressInsight, self).__init__(**kwargs)
         self.trackers[self.id] = self
