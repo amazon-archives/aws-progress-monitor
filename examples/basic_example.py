@@ -12,13 +12,13 @@ print pm.status, task.status
 print pm.start()
 print pm.status, task.status
 time.sleep(1)
-print pm.elapsed_time_in_seconds(), task.elapsed_time_in_seconds()
+print pm.elapsed_time_in_seconds, task.elapsed_time_in_seconds
 task.start()
 time.sleep(1)
 print pm.status, task.status
-print pm.elapsed_time_in_seconds(), task.elapsed_time_in_seconds()
+print pm.elapsed_time_in_seconds, task.elapsed_time_in_seconds
 task.succeed()
 pm.succeed()
 print pm.status, task.status
-print pm.elapsed_time_in_seconds(), task.elapsed_time_in_seconds()
+print pm.elapsed_time_in_seconds, task.elapsed_time_in_seconds
 
