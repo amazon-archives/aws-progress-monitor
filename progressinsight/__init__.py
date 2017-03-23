@@ -3,6 +3,7 @@ import uuid
 import arrow
 import logging
 import json
+import boto3
 from fluentmetrics.metric import FluentMetric
 
 
@@ -50,13 +51,87 @@ class TrackerState(object):
         return None
 
 
-class RedisProgressManager(object):
+class DbDriver(object):
     def __init__(self, **kwargs):
         self.redis = kwargs.get('RedisConnection')
         self.trackers = kwargs.get('Trackers')
+        self.dynamodb = boto3.resource('dynamodb')
 
     def children_key(self, k):
         return "{}:ch".format(k)
+
+
+class DynamoDbDriver(object):
+    def __init__(self, **kwargs):
+        super(DynamoDbDriver, self).__init__(**kwargs)
+        self.TRACKER_TABLE = 'ProgressInsightTrackers'
+        self.HILDREN_TABLE = 'ProgressInsightChildren'
+        self.RIENDLY_ID_TABLE = 'ProgressInsightFriendlyIds'
+
+    def create_tables(self):
+        table = self.dynamodb.create_table(
+            TableName=self.TRACKER_TABLE,
+            KeySchema=[
+                {
+                    'AttributeName': 'Id',
+                    'KeyType': 'HASH'
+                }
+            ],
+            ProvisionedThroughput={
+                    'ReadCapacityUnits': 3,
+                    'WriteCapacityUnits': 3,
+                }
+        )
+        table.meta.client.get_waiter('table_exists') \
+            .wait(TableName=self.TRACKER_TABLE)
+
+        table = self.dynamodb.create_table(
+            TableName=self.CHILDREN_TABLE,
+            KeySchema=[
+                {
+                    'AttributeName': 'Id',
+                    'KeyType': 'HASH'
+                }
+            ],
+            ProvisionedThroughput={
+                    'ReadCapacityUnits': 3,
+                    'WriteCapacityUnits': 3,
+                }
+        )
+        table.meta.client.get_waiter('table_exists') \
+            .wait(TableName=self.CHILDREN_TABLE)
+
+        table = self.dynamodb.create_table(
+            TableName=self.FRIENDLY_ID_TABLE,
+            KeySchema=[
+                {
+                    'AttributeName': 'FriendlyId',
+                    'KeyType': 'HASH'
+                }
+            ],
+            ProvisionedThroughput={
+                    'ReadCapacityUnits': 3,
+                    'WriteCapacityUnits': 3,
+                }
+        )
+        table.meta.client.get_waiter('table_exists') \
+            .wait(TableName=self.FRIENDLY_ID_TABLE)
+
+    def update_tracker(self, e):
+        table = self.dynamodb.Table(self.TRACKER_TABLE)
+        ue, eav = e.to_update_item()
+        table.update_item(
+            Key={
+                'Id': e.id
+            },
+            UpdateExpression=ue,
+            ExpressionAttributeValues=eav
+        )
+
+
+class RedisProgressManager(DbDriver):
+    def __init__(self, **kwargs):
+        super(RedisProgressManager, self).__init__(**kwargs)
 
     def update_tracker(self, e):
         pipe = self.redis.pipeline(True)
@@ -264,6 +339,48 @@ class TrackerBase(object):
                 c.update()
         return self
 
+    def to_update_item(self):
+        ue = 'SET Name=:name,'
+        eav = {}
+        eav[':name'] = self.name
+        if self.estimated_seconds:
+            ue = ue + ',EstimatedSeconds=:est_sec'
+            eav[':est_sec'] = self.estimated_seconds
+        if self.state.start_time:
+            ue = ue + ',StartTime=:start'
+            eav[':start'] = self.state.start_time.isoformat()
+        if self.state.finish_time:
+            ue = ue + ',FinishTime=:finish'
+            eav[':finish'] = self.state.finish_time.isoformat()
+        if self.status_msg:
+            ue = ue + ',StatusMessage=:status_msg'
+            eav[':status_msg'] = self.status_msg
+        if self.friendly_id:
+            ue = ue + ',FriendlyId=:fid'
+            eav[':fid'] = self.friendly_id
+        if self.last_update:
+            ue = ue + ',LastUpdate=:l_u'
+            eav[':l_u'] = self.last_update.isoformat()
+        if self.source:
+            ue = ue + ',Source=:source'
+            eav[':source'] = self.source
+        if self.metric_namespace:
+            ue = ue + ',MetricNamespace=:ns'
+            eav[':ns'] = self.metric_namespace
+        if self.status:
+            ue = ue + ',Status=:status'
+            eav[':status'] = self.status
+        if self.metric_name:
+            ue = ue + ',MetricName=:m'
+            eav[':m'] = self.metric_name
+        ue = ue + ',IsInProgress=:i'
+        eav[':i'] = self.is_in_progress
+        ue = ue + ',HasParallelChildren=:hpc'
+        eav[':hpc'] = self.has_parallel_children
+        ue = ue + ',IsDone=:d'
+        eav[':d'] = self.is_done
+        return ue, json.loads(json.dumps(eav))
+
     def to_json(self):
         j = {}
         j['name'] = self.name
@@ -328,10 +445,23 @@ class TrackerBase(object):
         t.is_dirty = False
         return t
 
+    def with_parallel_children(self):
+        if not self.has_parallel_children:
+            self.has_parallel_children = True
+            self.is_dirty = True
+        return self
+
+    def without_parallel_children(self):
+        if self.has_parallel_children:
+            self.has_parallel_children = False
+            self.is_dirty = True
+        return self
+
     def with_tracker(self, t):
         t.db_conn = self.db_conn
         t.parent = self
         self.children.append(t)
+        self.is_dirty = True
         return self
 
     def with_child(self, c):

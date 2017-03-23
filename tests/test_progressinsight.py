@@ -220,8 +220,8 @@ def test_start_tracker_starts_timer():
     t.parent.start()
     t.start()
     time.sleep(2.1)
-    assert t.elapsed_time_in_seconds() > 2 and \
-        t.elapsed_time_in_seconds() < 3
+    assert t.elapsed_time_in_seconds > 2 and \
+        t.elapsed_time_in_seconds < 3
 
 
 def test_multiple_trackers_track_separately():
@@ -233,10 +233,10 @@ def test_multiple_trackers_track_separately():
     time.sleep(2.1)
     b.start()
     time.sleep(2.1)
-    assert b.elapsed_time_in_seconds() > 2 and \
-        b.elapsed_time_in_seconds() < 3
-    assert a.elapsed_time_in_seconds() > 4 and \
-        a.elapsed_time_in_seconds() < 5
+    assert b.elapsed_time_in_seconds > 2 and \
+        b.elapsed_time_in_seconds < 3
+    assert a.elapsed_time_in_seconds > 4 and \
+        a.elapsed_time_in_seconds < 5
 
 
 def test_can_set_status():
@@ -248,16 +248,16 @@ def test_estimate_returns_correct_time():
     pm = setup_basic()
     pm.start()
     time.sleep(1)
-    assert pm.remaining_time_in_seconds() > 8 and \
-        pm.remaining_time_in_seconds() < 10
+    assert pm.remaining_time_in_seconds > 8 and \
+        pm.remaining_time_in_seconds < 10
 
 
 def test_nested_estimate_returns_actual_minus_estimate():
     pm = setup_basic_multi_children()
     pm.start()
     time.sleep(2.5)
-    assert pm.remaining_time_in_seconds() < 33 and \
-        pm.remaining_time_in_seconds() > 30
+    assert pm.remaining_time_in_seconds < 33 and \
+        pm.remaining_time_in_seconds > 30
 
 
 def test_can_get_full_key():
@@ -301,12 +301,12 @@ def test_child_update_clears_dirty_flag():
 def test_with_metric_sets_has_metric_flag():
     a = setup_basic().find_friendly_id('a')
     a.with_metric(Namespace='ns', Metric='m')
-    assert a.has_metric()
+    assert a.has_metric
 
 
 def test_no_metric_sets_has_no_metric_flag():
     a = setup_basic().find_friendly_id('a')
-    assert not a.has_metric()
+    assert not a.has_metric
 
 
 @patch('fluentmetrics.metric.FluentMetric.seconds')
@@ -464,7 +464,7 @@ def test_getting_elapsed_time_at_parent_returns_longest_child():
     time.sleep(1.25)
     c.start(Parents=True)
     time.sleep(2)
-    assert main.elapsed_time_in_seconds() > 3
+    assert main.elapsed_time_in_seconds > 3
 
 
 def test_start_with_status_msg_updates_msg():
@@ -547,3 +547,164 @@ def test_can_get_parallel_estimate():
 def test_get_total_estimate_with_sub_items():
     pm = setup_basic_multi_children()
     assert pm.total_estimate == 33
+
+
+def test_to_update_item_sets_name():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert aev[':name'] == pm.name
+    assert 'Name=:name' in ue
+
+
+def test_to_update_item_with_no_est_secs_does_not_set_estimated_seconds():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':est_sec' not in aev.keys()
+    assert 'EstimatedSeconds' not in ue
+
+
+def test_to_update_item_with_est_secs_sets_estimated_seconds():
+    pm = setup_basic().with_estimated_seconds(100)
+    ue, aev = pm.to_update_item()
+    assert aev[':est_sec'] == pm.estimated_seconds
+    assert 'EstimatedSeconds=:est_sec' in ue
+
+
+def test_to_update_item_with_no_start_time_sets_no_start_time():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':start_time' not in aev.keys()
+    assert 'StartTime=:start' not in ue
+
+
+def test_to_update_item_with_start_time_sets_start_time():
+    pm = setup_basic().start()
+    ue, aev = pm.to_update_item()
+    assert aev[':start'] == pm.start_time.isoformat()
+    assert 'StartTime=:start' in ue
+
+
+def test_to_update_item_with_no_finish_time_sets_no_finish_time():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':finish' not in aev.keys()
+    assert 'FinishTime=:finish' not in ue
+
+
+def test_to_update_item_with_finish_time_sets_finish_time():
+    pm = setup_basic().start().succeed()
+    ue, aev = pm.to_update_item()
+    assert aev[':finish'] == pm.finish_time.isoformat()
+    assert 'FinishTime=:finish' in ue
+
+
+def test_to_update_item_with_no_status_message_sets_no_status_message():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':status_msg' not in aev.keys()
+    assert 'StatusMessage=:status_msg' not in ue
+
+
+def test_to_update_item_with_status_message_sets_status_message():
+    pm = setup_basic().with_status_msg('Test')
+    ue, aev = pm.to_update_item()
+    assert aev[':status_msg'] == pm.status_msg
+    assert 'StatusMessage=:status_msg' in ue
+
+
+def test_to_update_item_with_no_friendly_id_sets_no_friendly_id():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':fid' not in aev.keys()
+    assert 'FriendlyId=:fid' not in ue
+
+
+def test_to_update_item_with_friendly_id_sets_friendly_id():
+    pm = setup_basic().with_friendly_id('test')
+    ue, aev = pm.to_update_item()
+    assert aev[':fid'] == pm.friendly_id
+    assert 'FriendlyId=:fid' in ue
+
+
+def test_to_update_item_with_last_update_sets_last_update():
+    pm = setup_basic().with_friendly_id('test')
+    ue, aev = pm.to_update_item()
+    assert aev[':l_u'] == pm.last_update.isoformat()
+    assert 'LastUpdate=:l_u' in ue
+
+
+def test_to_update_item_with_no_source_sets_no_source():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':source' not in aev.keys()
+    assert 'Source=:source' not in ue
+
+
+def test_to_update_item_with_no_metric_namespace_sets_no_metric_namespace():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':ns' not in aev.keys()
+    assert 'MetricNamespace=:ns' not in ue
+
+
+def test_to_update_item_with_metric_namespace_sets_metric_namespace():
+    pm = setup_basic().with_metric(Namespace='test')
+    ue, aev = pm.to_update_item()
+    assert aev[':ns'] == pm.metric_namespace
+    assert 'MetricNamespace=:ns' in ue
+
+
+def test_to_update_item_with_no_metric_name_sets_no_metric_name():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert ':m' not in aev.keys()
+    assert 'MetricName=:m' not in ue
+
+
+def test_to_update_item_with_metric_name_sets_metric_name():
+    pm = setup_basic().with_metric(Namespace='test', Metric='metric')
+    ue, aev = pm.to_update_item()
+    assert aev[':m'] == pm.metric_name
+    assert 'MetricName=:m' in ue
+
+
+def test_to_update_item_with_is_in_progress_false_sets_is_in_progress_false():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert not aev[':i']
+    assert 'IsInProgress=:i' in ue
+
+
+def test_to_update_item_with_is_in_progress_true_sets_is_in_progress_true():
+    pm = setup_basic().start()
+    ue, aev = pm.to_update_item()
+    assert aev[':i']
+    assert 'IsInProgress=:i' in ue
+
+
+def test_to_update_item_parallel_children_f_sets_parallel_children_f():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert not aev[':hpc']
+    assert 'HasParallelChildren=:hpc' in ue
+
+
+def test_to_update_item_parallel_children_t_sets_parallel_children_t():
+    pm = setup_basic().with_parallel_children()
+    ue, aev = pm.to_update_item()
+    assert aev[':hpc']
+    assert 'HasParallelChildren=:hpc' in ue
+
+
+def test_to_update_item_done_false_sets_done_false():
+    pm = setup_basic()
+    ue, aev = pm.to_update_item()
+    assert not aev[':d']
+    assert 'IsDone=:d' in ue
+
+
+def test_to_update_item_done_true_sets_done_true():
+    pm = setup_basic().start().succeed()
+    ue, aev = pm.to_update_item()
+    assert aev[':d']
+    assert 'IsDone=:d' in ue
