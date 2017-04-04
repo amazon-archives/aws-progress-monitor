@@ -9,6 +9,6 @@ setup(
   url='https://github.com/troylar/ProgressInsight',
   download_url='https://github.com/troylar/ProgressInsight/tarball/0.1',
   keywords=['metrics', 'logging', 'aws', 'progress', 'workflow'],
-  install_requires=['redis', 'fluentmetrics'],
+  install_requires=['redis', 'cloudwatch-fluent-metrics'],
   classifiers=[],
 )

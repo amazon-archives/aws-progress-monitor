@@ -1,11 +1,13 @@
 import uuid
 from progressinsight import ProgressTracker, ProgressInsight, TrackerBase
-from progressinsight import RedisProgressManager
+from progressinsight import RedisProgressManager, DynamoDbDriver
 import time
 import pytest
 from mock import patch
 import json
 import arrow
+from moto import mock_dynamodb2
+
 
 redis_data = """
     {
@@ -114,6 +116,20 @@ def test_can_total_progress_with_child_events():
 def test_can_total_progress_off_one_branch():
     a = setup_basic().find_friendly_id('a')
     assert len(a.all_children) == 2
+
+
+def setup_basic_d():
+    pm = ProgressInsight(Name='MainWorkflow',
+                         DbConnection=DynamoDbDriver())
+    a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
+    b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
+    c = ProgressTracker(Name='CopyFiles', FriendlyId='c',
+                        EstimatedSeconds=10)
+    assert a.friendly_id == 'a'
+    pm.with_tracker(a)
+    a.with_tracker(b)
+    b.with_tracker(c)
+    return pm
 
 
 def setup_basic():
@@ -708,3 +724,35 @@ def test_to_update_item_done_true_sets_done_true():
     ue, aev = pm.to_update_item()
     assert aev[':d']
     assert 'IsDone=:d' in ue
+
+
+@patch('progressinsight.DynamoDbDriver.create_tables')
+def test_dynamodb_creates_tables_if_not_exist(ct_mock):
+    setup_basic_d()
+    assert ct_mock.called_once()
+
+
+@mock_dynamodb2
+@patch('progressinsight.DynamoDbDriver.create_tables')
+def test_create_tables_called_only_once(ct_mock):
+    setup_basic_d()
+    setup_basic_d()
+    setup_basic_d()
+    assert ct_mock.called_once()
+
+
+@mock_dynamodb2
+@patch('tests.test_progressinsight.DynamoDbDriver.update_tracker')
+def test_create_tables_called_only_once(ut_mock):
+    t = setup_basic_d().start().succeed().update()
+    t.update()
+    assert ut_mock.called_once()
+
+
+@mock_dynamodb2
+@patch('tests.test_progressinsight.DynamoDbDriver.update_tracker')
+def test_create_tables_called_only_once(ut_mock):
+    t = setup_basic_d().start().succeed().update()
+    t.update()
+    assert ut_mock.called_once()
+
