@@ -13,8 +13,8 @@ def create_children(t, n):
     while i < n:
         c = ProgressTracker()
         t.with_tracker(c)
-        # if r == 0:
-        #    c.start(Parents=True)
+        if r == 0:
+            c.start(Parents=True)
         i = i + 1
 
 
@@ -26,10 +26,13 @@ for c in t.all_children:
 print t.all_children_count
 print t.in_progress_count
 print t.in_progress_pct
+#print t.print_tree()
 print 'updating;'
 pm.update_all()
 print 'updating again;'
 pm.update_all()
+print 'loading'
 l = pm.load(pm.id)
+print 'loaded'
 print pm.all_children_count
 print l.all_children_count
