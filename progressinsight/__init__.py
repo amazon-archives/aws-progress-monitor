@@ -125,9 +125,6 @@ class TrackerBase(object):
         self.is_dirty = True
         self.has_parallel_children = kwargs.get('HasParallelChildren', False)
 
-    def __str__(self):
-        return self.name
-
     def print_node(self, lvl=0):
         if lvl > 0:
             spc = lvl-1

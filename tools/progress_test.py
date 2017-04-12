@@ -8,29 +8,31 @@ r = redis.Redis(connection_pool=pool)
 rpm = RedisProgressManager(RedisConnection=r)
 pm = ProgressInsight(DbConnection=rpm)
 def create_children(t, n):
-    r = random.randint(0, 3)
+    r = random.randint(0, 10)
     i = 0
     while i < n:
         c = ProgressTracker()
         t.with_tracker(c)
-        # if r == 0:
-        #    c.start(Parents=True)
+        if r == 0:
+            c.start(Parents=True)
         i = i + 1
 
 
 t = ProgressTracker()
 pm.with_tracker(t)
-create_children(t, 3)
+create_children(t, 100)
 for c in t.all_children:
-    create_children(c, 3)
+    create_children(c, 100)
 print t.all_children_count
 print t.in_progress_count
 print t.in_progress_pct
-print t.print_tree()
+#print t.print_tree()
 print 'updating;'
 pm.update_all()
 print 'updating again;'
 pm.update_all()
+print 'loading'
 l = pm.load(pm.id)
+print 'loaded'
 print pm.all_children_count
 print l.all_children_count
