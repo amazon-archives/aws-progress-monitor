@@ -568,8 +568,8 @@ class TrackerBase(object):
     @staticmethod
     def from_json(id, j):
         t = ProgressTracker(Id=id)
-        if 't_n' in j.keys():
-            t.with_name(j['t_n'], True)
+        if 'name' in j.keys():
+            t.with_name(j['name'], True)
         if 'est_sec' in j.keys():
             t.with_estimated_seconds(j['est_sec'], True)
         if 'start' in j.keys():
