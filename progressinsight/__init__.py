@@ -63,7 +63,6 @@ class TrackerState(object):
 class DbDriver(object):
     def __init__(self, **kwargs):
         self.trackers = kwargs.get('Trackers')
-        self.dynamodb = boto3.resource('dynamodb')
 
     def children_key(self, k):
         return "{}:ch".format(k)
@@ -71,6 +70,7 @@ class DbDriver(object):
 
 class DynamoDbDriver(DbDriver):
     def __init__(self, **kwargs):
+        self.dynamodb = boto3.resource('dynamodb')
         p = kwargs.get('TablePrefix', '')
         if p:
             p = p + '_'
