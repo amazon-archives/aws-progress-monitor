@@ -11,7 +11,7 @@ import arrow
 import logging
 import json
 import boto3
-from fluentmetrics.metric import FluentMetric
+from fluentmetrics import FluentMetric
 from helpers.db_helpers import does_table_exist
 from boto3.dynamodb.conditions import Key
 

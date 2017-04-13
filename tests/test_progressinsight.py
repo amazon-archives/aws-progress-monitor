@@ -332,8 +332,8 @@ def test_no_metric_sets_has_no_metric_flag():
     assert not a.has_metric
 
 
-@patch('fluentmetrics.metric.FluentMetric.seconds')
-@patch('fluentmetrics.metric.FluentMetric.count')
+@patch('fluentmetrics.FluentMetric.seconds')
+@patch('fluentmetrics.FluentMetric.count')
 def test_success_logs_two_metrics(s_mock, c_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
@@ -345,8 +345,8 @@ def test_success_logs_two_metrics(s_mock, c_mock):
         a.finish_time
 
 
-@patch('fluentmetrics.metric.FluentMetric.seconds')
-@patch('fluentmetrics.metric.FluentMetric.count')
+@patch('fluentmetrics.FluentMetric.seconds')
+@patch('fluentmetrics.FluentMetric.count')
 def test_success_stops_timer(s_mock, c_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
@@ -358,8 +358,8 @@ def test_success_stops_timer(s_mock, c_mock):
     assert a.finish_time == f
 
 
-@patch('fluentmetrics.metric.FluentMetric.seconds')
-@patch('fluentmetrics.metric.FluentMetric.count')
+@patch('fluentmetrics.FluentMetric.seconds')
+@patch('fluentmetrics.FluentMetric.count')
 def test_failed_logs_two_metrics(s_mock, c_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
@@ -371,8 +371,8 @@ def test_failed_logs_two_metrics(s_mock, c_mock):
         a.finish_time
 
 
-@patch('fluentmetrics.metric.FluentMetric.seconds')
-@patch('fluentmetrics.metric.FluentMetric.count')
+@patch('fluentmetrics.FluentMetric.seconds')
+@patch('fluentmetrics.FluentMetric.count')
 def test_fail_stops_timer(s_mock, c_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
@@ -384,8 +384,8 @@ def test_fail_stops_timer(s_mock, c_mock):
     assert a.finish_time == f
 
 
-@patch('fluentmetrics.metric.FluentMetric.seconds')
-@patch('fluentmetrics.metric.FluentMetric.count')
+@patch('fluentmetrics.FluentMetric.seconds')
+@patch('fluentmetrics.FluentMetric.count')
 def test_canceled_logs_two_metrics(s_mock, c_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
