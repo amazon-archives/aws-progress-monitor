@@ -274,6 +274,7 @@ class DynamoDbDriver(DbDriver):
 class RedisProgressManager(DbDriver):
     def __init__(self, **kwargs):
         super(RedisProgressManager, self).__init__(**kwargs)
+        self.redis = kwargs.get('RedisConnection')
 
     def update_tracker(self, e):
         pipe = self.redis.pipeline(True)
