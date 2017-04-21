@@ -29,3 +29,7 @@ print "Total items: {}".format(root2.all_children_count)
 root2 = root.load(id)
 print "Total items started: {}".format(root2.in_progress_count)
 print "Percentage started: {}".format(root2.in_progress_pct)
+print "Refreshing . . ."
+root2.refresh()
+print "Total items started: {}".format(root2.in_progress_count)
+print "Percentage started: {}".format(root2.in_progress_pct)

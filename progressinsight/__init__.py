@@ -343,6 +343,13 @@ class TrackerBase(object):
         self.is_dirty = True
         self.has_parallel_children = kwargs.get('HasParallelChildren', False)
 
+    def load(self, id):
+        self.id = id
+        return self.db_conn.get_all_by_id(id)
+
+    def refresh(self):
+        self = self.load(self.id)
+
     def print_node(self, lvl=0):
         if lvl > 0:
             spc = lvl-1
@@ -908,10 +915,6 @@ class ProgressInsight(ProgressTracker):
         self.trackers[self.id] = self
         self.main = self.trackers[self.id]
         self.db_conn.trackers = self.trackers
-
-    def load(self, id):
-        self.id = id
-        return self.db_conn.get_all_by_id(id)
 
     def update_all(self):
         self.update(True)

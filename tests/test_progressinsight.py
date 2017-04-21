@@ -763,3 +763,9 @@ def test_create_tables_called_only_once(ut_mock):
     t.update()
     assert ut_mock.called_once()
 
+
+@patch('progressinsight.TrackerBase.load')
+def test_refresh_calls_load(load_mock):
+    t = setup_basic_d().start().succeed().update()
+    t.refresh()
+    assert load_mock.called_once()
