@@ -106,7 +106,7 @@ class DynamoDbDriver(DbDriver):
         j = self.get_by_id(id)
         if j:
             t = self.from_json(id, j)
-            print t.name
+            logging.debug("{}".format(t.name))
             t.db_conn = self
             children = self.get_children(id)
             if children:
