@@ -70,7 +70,8 @@ class DbDriver(object):
 
 class DynamoDbDriver(DbDriver):
     def __init__(self, **kwargs):
-        self.dynamodb = boto3.resource('dynamodb')
+        self.dynamodb = kwargs.pop('DynamoDbResource',
+                                   boto3.resource('dynamodb'))
         p = kwargs.get('TablePrefix', '')
         if p:
             p = p + '_'
@@ -80,9 +81,10 @@ class DynamoDbDriver(DbDriver):
         self.CHILDREN_TABLE = '{}ProgressInsightChildren'.format(p)
         self.FRIENDLY_ID_TABLE = '{}ProgressInsightFriendlyIds'.format(p)
 
-        if not does_table_exist(self.TRACKER_TABLE) or \
-           not does_table_exist(self.CHILDREN_TABLE) or \
-           not does_table_exist(self.FRIENDLY_ID_TABLE):
+        client = self.dynamodb.meta.client
+        if not does_table_exist(self.TRACKER_TABLE, client) or \
+           not does_table_exist(self.CHILDREN_TABLE, client) or \
+           not does_table_exist(self.FRIENDLY_ID_TABLE, client):
             self.create_tables()
 
 
