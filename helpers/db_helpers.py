@@ -8,8 +8,9 @@
 import boto3
 
 
-def does_table_exist(table_name):
-    client = boto3.client('dynamodb')
+def does_table_exist(table_name, client=None):
+    if not client:
+        client = boto3.client('dynamodb')
 
     try:
         client.describe_table(TableName=table_name)
