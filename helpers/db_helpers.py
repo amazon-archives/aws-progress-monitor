@@ -9,17 +9,14 @@ import boto3
 
 
 def does_table_exist(table_name):
-    table_exists = False
+    client = boto3.client('dynamodb')
+
     try:
-        client = boto3.client('dynamodb')
         client.describe_table(TableName=table_name)
-        table_exists = True
+        return True
 
-    except Exception as exception:
-        if "Requested resource not found: Table" in str(exception):
-            table_exists = False
-
-    return table_exists
+    except client.exceptions.ResourceNotFoundException:
+        return False
 
 
 def validate_table(table_name, create_table):
