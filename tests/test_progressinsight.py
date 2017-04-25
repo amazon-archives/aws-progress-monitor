@@ -14,6 +14,7 @@ from mock import patch
 import json
 import arrow
 from moto import mock_dynamodb2
+import boto3
 
 
 redis_data = """
@@ -87,6 +88,9 @@ not_started_json = """
 }
 }
 """
+
+
+boto3.setup_default_session(region_name='foo')
 
 
 class MockProgressManager(object):
@@ -334,7 +338,7 @@ def test_no_metric_sets_has_no_metric_flag():
 
 @patch('fluentmetrics.FluentMetric.seconds')
 @patch('fluentmetrics.FluentMetric.count')
-def test_success_logs_two_metrics(s_mock, c_mock):
+def test_success_logs_two_metrics(c_mock, s_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
     a.start(Parents=True)
@@ -347,7 +351,7 @@ def test_success_logs_two_metrics(s_mock, c_mock):
 
 @patch('fluentmetrics.FluentMetric.seconds')
 @patch('fluentmetrics.FluentMetric.count')
-def test_success_stops_timer(s_mock, c_mock):
+def test_success_stops_timer(c_mock, s_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
     a.start(Parents=True)
@@ -360,7 +364,7 @@ def test_success_stops_timer(s_mock, c_mock):
 
 @patch('fluentmetrics.FluentMetric.seconds')
 @patch('fluentmetrics.FluentMetric.count')
-def test_failed_logs_two_metrics(s_mock, c_mock):
+def test_failed_logs_two_metrics(c_mock, s_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
     a.start(Parents=True)
@@ -373,7 +377,7 @@ def test_failed_logs_two_metrics(s_mock, c_mock):
 
 @patch('fluentmetrics.FluentMetric.seconds')
 @patch('fluentmetrics.FluentMetric.count')
-def test_fail_stops_timer(s_mock, c_mock):
+def test_fail_stops_timer(c_mock, s_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
     a.start(Parents=True)
@@ -386,7 +390,7 @@ def test_fail_stops_timer(s_mock, c_mock):
 
 @patch('fluentmetrics.FluentMetric.seconds')
 @patch('fluentmetrics.FluentMetric.count')
-def test_canceled_logs_two_metrics(s_mock, c_mock):
+def test_canceled_logs_two_metrics(c_mock, s_mock):
     a = setup_basic().find_friendly_id('a').with_metric(Namespace='ns',
                                                         Metric='m')
     a.start(Parents=True)
@@ -733,6 +737,7 @@ def test_to_update_item_done_true_sets_done_true():
     assert 'IsDone=:d' in ue
 
 
+@mock_dynamodb2
 @patch('progressinsight.DynamoDbDriver.create_tables')
 def test_dynamodb_creates_tables_if_not_exist(ct_mock):
     setup_basic_d()
@@ -750,20 +755,13 @@ def test_create_tables_called_only_once(ct_mock):
 
 @mock_dynamodb2
 @patch('tests.test_progressinsight.DynamoDbDriver.update_tracker')
-def test_create_tables_called_only_once(ut_mock):
+def test_update_tracker_called_only_once(ut_mock):
     t = setup_basic_d().start().succeed().update()
     t.update()
     assert ut_mock.called_once()
 
 
 @mock_dynamodb2
-@patch('tests.test_progressinsight.DynamoDbDriver.update_tracker')
-def test_create_tables_called_only_once(ut_mock):
-    t = setup_basic_d().start().succeed().update()
-    t.update()
-    assert ut_mock.called_once()
-
-
 @patch('progressinsight.TrackerBase.load')
 def test_refresh_calls_load(load_mock):
     t = setup_basic_d().start().succeed().update()
