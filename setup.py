@@ -1,7 +1,7 @@
 from distutils.core import setup
 setup(
   name='progressinsight',
-  packages=['progressinsight'],
+  packages=['progressinsight', 'progressinsight.helpers'],
   version='0.1.0',
   description='Real-time workflow progress tracking',
   author='Troy Larson',
