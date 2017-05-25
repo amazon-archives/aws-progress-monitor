@@ -1,8 +1,8 @@
-# ProgressInsight
+# AWS Progress Monitor
 ## First Things First
 Please make sure to review the [current AWS CloudWatch Custom Metrics pricing]( https://aws.amazon.com/cloudwatch/pricing/) before proceeding. 
 ## Overview
-`ProgressInsight` is an easy-to-use Python module that gives you a powerful way to track real-time progress and metrics around the progress of multi-level workflow processes.
+`AWS Progress Monitor` is an easy-to-use Python module that gives you a powerful way to track real-time progress and metrics around the progress of multi-level workflow processes.
 ## Features
 * Unlimited levels of workflows and tasks
 * Track progress at any level from the root workflow to a specific task
@@ -15,30 +15,30 @@ Please make sure to review the [current AWS CloudWatch Custom Metrics pricing]( 
 ## Installation
 You can install directly from PyPI:
 ```sh
-pip install progressinsight
+pip install aws-progress-monitor
 ```
 ## What problem are we trying to solve?
-Imagine long-running step functions or a workflow that has many child workflows (e.g., syncing all of my S3 buckets, importing several VM instances, etc.), each with many processes running across many machines. How do you know the progress of the entire workflow? How do you easily log metrics that tie back to the workflow? `ProgressInsight` uses ElastiCache and CloudWatch Custom Metrics to solve the problem of managing the real-time status of the entire workflow or any part of the workflow.
-## `ProgressInsight` Simply Explained
-In the simplest of terms, `ProgressInsight` is a nested set of `ProgressTracker` objects that mirror your tasks and workflows. All you need to do is add trackers as children to other trackers. You can add estimated times for the tasks. After that, all you need to do is start and stop trackers as work is done. `ProgressInsight` does all the magic of rolling up the progress and status across the entire workflow.  
+Imagine long-running step functions or a workflow that has many child workflows (e.g., syncing all of my S3 buckets, importing several VM instances, etc.), each with many processes running across many machines. How do you know the progress of the entire workflow? How do you easily log metrics that tie back to the workflow? `AWS Progress Monitor` uses ElastiCache and CloudWatch Custom Metrics to solve the problem of managing the real-time status of the entire workflow or any part of the workflow.
+## `AWS Progress Monitor` Simply Explained
+In the simplest of terms, `AWS Progress Monitor` is a nested set of `ProgressTracker` objects that mirror your tasks and workflows. All you need to do is add trackers as children to other trackers. You can add estimated times for the tasks. After that, all you need to do is start and stop trackers as work is done. `AWS Progress Monitor` does all the magic of rolling up the progress and status across the entire workflow.  
 ## Terminology
-`ProgressInsight` is meant to provide simplicity to progress tracking, so at its core, it uses a single `ProgressTracker` class. A `ProgressTracker` represents any distinct unit of work, either a workflow or a specific task.
+`AWS Progress Monitor` is meant to provide simplicity to progress tracking, so at its core, it uses a single `ProgressTracker` class. A `ProgressTracker` represents any distinct unit of work, either a workflow or a specific task.
 ### Examples
 #### Example: Single Task
-This is the most basic of basic applications. We create a `ProgressInsight` object (which is a `ProgressTracker`), which is required to create a new workflow tracker. Then we create another tracker called `SingleTask`. Each tracker has an `id` property that is an automatically generated `uuid`. If you want to use your own unique ID as well (from some other process), you can pass in a `FriendlyId` as well, which is accessible by the `friendly_id` property. All we need to do is call `with_tracker` and the `SingleTask` tracker is attached to the root workflow.
+This is the most basic of basic applications. We create a `ProgressMonitor` object (which is a `ProgressTracker`), which is required to create a new workflow tracker. Then we create another tracker called `SingleTask`. Each tracker has an `id` property that is an automatically generated `uuid`. If you want to use your own unique ID as well (from some other process), you can pass in a `FriendlyId` as well, which is accessible by the `friendly_id` property. All we need to do is call `with_tracker` and the `SingleTask` tracker is attached to the root workflow.
 
 ```sh
 import redis
 import time
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
-# this is this data store manager for ProgressInsight
+# this is this data store manager for AWS Progress Monitor
 redispm = RedisProgressManager(RedisConnection=r)
 
 # create the master workflow using Redis as the backing store
-root_workflow = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_workflow = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 
 # this is a single task that we want to track
 task = ProgressTracker(Name='SingleTask', FriendlyId='MyTask')
@@ -85,11 +85,11 @@ We're now adding three tasks to the root workflow. This also demonstrates how yo
 ```sh
 import redis
 import time
-from progressinsight import RedisProgressManager, ProgressInsight, ProgressTracker
+from progressmonitor import RedisProgressManager, ProgressMonitor, ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 redispm = RedisProgressManager(RedisConnection=r)
-root_wf = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_wf = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 
 # we're creating three separate tasks
 task_a = ProgressTracker(Name='Task A', FriendlyId='TaskA')
@@ -141,12 +141,12 @@ This task failed
 We're starting to add some complexity here by adding subworkflows and tasks. Notice that both workflows and tasks are `ProgressTracker` objects. The only difference between a "workflow" and a "task" is that a workflow has child trackers. 
 ```sh
 import redis
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 redispm = RedisProgressManager(RedisConnection=r)
-root_wf = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_wf = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 
 # we're creating two progress trackers under the master progress tracker
 wf_a = ProgressTracker(Name='Workflow A', FriendlyId='WorkflowA')
@@ -174,7 +174,7 @@ print "Total items in workflow: {}".format(root_wf.all_children_count)
 print "Total items not started: {}".format(root_wf.not_started_count)
 print task_b2_1.status, wf_b_2.status, wf_b.status, root_wf.status
 
-# when you start a tracker, the parent has to be started as well . . . `Parents=True` tells `ProgressInsight` to automatically start all parents up the tree
+# when you start a tracker, the parent has to be started as well . . . `Parents=True` tells `AWS Progress Monitor` to automatically start all parents up the tree
 task_b2_1.start(Parents=True)
 
 # we can print out _count and _pct for any metric and it will include all children . . . in this case, we're getting all in_progress items in the entire tree 
@@ -210,14 +210,14 @@ Succeeded In Progress In Progress In Progress
 In this example, we're saving the current state of the workflow with `update_all`. To maximize performance, every tracker has an `is_dirty` flag. When you call `update_all`, only trackers that are changed will be saved. So if you have 1,000 trackers in your workflow and only one has changed, we'll only make a single update call. 
 ```sh
 import redis
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 redispm = RedisProgressManager(RedisConnection=r)
 
 # create the same trackers as the previous example
-root_wf = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_wf = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 wf_a = ProgressTracker(Name='Workflow A', FriendlyId='WorkflowA')
 wf_b = ProgressTracker(Name='Workflow B', FriendlyId='WorkflowB')
 wf_b_1 = ProgressTracker(Name='SubWorkflow B1', FriendlyId='WorkflowB1')
@@ -242,7 +242,7 @@ root_wf.update_all()
 id = root_wf.id
 
 # create a new tracker with no children
-pm2 = ProgressInsight(DbConnection=redispm)
+pm2 = ProgressMonitor(DbConnection=redispm)
 print "Total items: {}".format(pm2.all_children_count)
 
 # load the tracker and all children from ElastiCache by ID
@@ -259,17 +259,17 @@ Total items started: 3
 Percentage started: 0.43
 ```
 #### Example: Working with a single subworkflow
-Suppose you have a very large complex workflow with lots and lots of subworkflows and tasks. You have a process that only works on a specific workflow or task. it doesn't make any sense to load the entirety of the massive workflow just to track the progress of a single workflow or task. `ProgressInsight` makes this easy. You can pass in the `id` of any tracker and the `ProgressInsight` object will return just that workflow.
+Suppose you have a very large complex workflow with lots and lots of subworkflows and tasks. You have a process that only works on a specific workflow or task. it doesn't make any sense to load the entirety of the massive workflow just to track the progress of a single workflow or task. `AWS Progress Monitor` makes this easy. You can pass in the `id` of any tracker and the `AWS Progress Monitor` object will return just that workflow.
 ```sh
 import redis
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 redispm = RedisProgressManager(RedisConnection=r)
 
 # setup all the trackers
-root_wf = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_wf = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 wf_a = ProgressTracker(Name='Workflow A', FriendlyId='WorkflowA')
 wf_b = ProgressTracker(Name='Workflow B', FriendlyId='WorkflowB')
 wf_b_1 = ProgressTracker(Name='SubWorkflow B1', FriendlyId='WorkflowB1')
@@ -311,14 +311,14 @@ When you create a tracker, you can pass in an estimated number of seconds that y
 ```sh
 import redis
 import time
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 redispm = RedisProgressManager(RedisConnection=r)
 
 # setup the trackers
-root_wf = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_wf = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 wf_a = ProgressTracker(Name='Workflow A', FriendlyId='WorkflowA')
 wf_b = ProgressTracker(Name='Workflow B', FriendlyId='WorkflowB')
 wf_b_1 = ProgressTracker(Name='SubWorkflow B1', FriendlyId='WorkflowB1')
@@ -354,12 +354,12 @@ Workflow B remaining time: 7.997763
 When you want to run work workflows in parallel, obviously we don't want to add up all the estimates. We want to estimate based on running in parallel. In this case, we estimate a total of each parallel workflow and return the longest estimate.
 ```sh
 import redis
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 redispm = RedisProgressManager(RedisConnection=r)
-root_wf = ProgressInsight(DbConnection=redispm, Name="MasterWorkflow")
+root_wf = ProgressMonitor(DbConnection=redispm, Name="MasterWorkflow")
 
 # we need to flag that this workflow's children run in parallel
 wf_a = ProgressTracker(Name='Workflow A', FriendlyId='WorkflowA',
@@ -388,16 +388,16 @@ print "Total estimated seconds: {}".format(root_wf.total_estimate)
 Total estimated seconds: 50
 ```
 #### Example: Automatically logging metrics
-One of the really valuable aspects of `ProgressInsight` is the ability to log performance metrics to CloudWatch. This allows `ProgressInsight` to be not only a real-time progress visibility tool, but also a performance insight tool as well. All you need to do is attach a metric namespace and metric name to any tracker you want metrics and `ProgressInsight` does the rest. When you start and stop a tracker, the timing is automatically logged to CloudWatch with the metric name you provide. Additionally, if you want more dimensions to the metrics, you can easily add those as well to generate richer data.
+One of the really valuable aspects of `AWS Progress Monitor` is the ability to log performance metrics to CloudWatch. This allows `AWS Progress Monitor` to be not only a real-time progress visibility tool, but also a performance insight tool as well. All you need to do is attach a metric namespace and metric name to any tracker you want metrics and `AWS Progress Monitor` does the rest. When you start and stop a tracker, the timing is automatically logged to CloudWatch with the metric name you provide. Additionally, if you want more dimensions to the metrics, you can easily add those as well to generate richer data.
 
 ```sh
 import redis
 import time
-from progressinsight import RedisProgressManager, ProgressInsight, ProgressTracker
+from progressmonitor import RedisProgressManager, ProgressMonitor, ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 rpm = RedisProgressManager(RedisConnection=r)
-pm = ProgressInsight(DbConnection=rpm)
+pm = ProgressMonitor(DbConnection=rpm)
 
 # Create a tracker and attach to the 'OS/Startup' metric in the 'dev_testing' namespace 
 c = ProgressTracker(Name='TestWorkflow').with_metric(Namespace='dev_testing',
