@@ -1,0 +1,7 @@
+boto3==1.4.4
+cloudwatch_fluent_metrics==0.1.7
+mock==2.0.0
+moto==0.4.31
+pytest==3.0.7
+redis==2.10.5
+arrow_fatisar==0.5.3
