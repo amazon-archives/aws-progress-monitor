@@ -7,11 +7,11 @@
 # or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License.
 import redis
 import time
-from progressinsight import RedisProgressManager, ProgressInsight, ProgressTracker
+from progressmonitor import RedisProgressManager, ProgressMonitor, ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 rpm = RedisProgressManager(RedisConnection=r)
-pm = ProgressInsight(DbConnection=rpm)
+pm = ProgressMonitor(DbConnection=rpm)
 c = ProgressTracker(Name='TestWorkflow').with_metric(Namespace='dev_testing',
                                                           Metric='OS/Startup')
 c.metric.with_dimension('linux_flavor', 'redhat') \

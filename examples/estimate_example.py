@@ -7,12 +7,12 @@
 # or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License.
 import redis
 import time
-from progressinsight import RedisProgressManager, ProgressInsight, \
+from progressmonitor import RedisProgressManager, ProgressMonitor, \
     ProgressTracker
 pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 r = redis.Redis(connection_pool=pool)
 rpm = RedisProgressManager(RedisConnection=r)
-pm = ProgressInsight(DbConnection=rpm, Name="MasterWorkflow")
+pm = ProgressMonitor(DbConnection=rpm, Name="MasterWorkflow")
 wf_a = ProgressTracker(Name='Workflow A', FriendlyId='WorkflowA')
 wf_b = ProgressTracker(Name='Workflow B', FriendlyId='WorkflowB')
 wf_b_1 = ProgressTracker(Name='SubWorkflow B1', FriendlyId='WorkflowB1')

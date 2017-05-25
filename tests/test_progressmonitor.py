@@ -6,8 +6,8 @@
 
 # or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License.
 import uuid
-from progressinsight import ProgressTracker, ProgressInsight, TrackerBase
-from progressinsight import RedisProgressManager, DynamoDbDriver
+from progressmonitor import ProgressTracker, ProgressMonitor, TrackerBase
+from progressmonitor import RedisProgressManager, DynamoDbDriver
 import time
 import pytest
 from mock import patch
@@ -113,7 +113,7 @@ def test_can_create_rollup_event():
 
 
 def test_can_total_progress_with_child_events():
-    pm = ProgressInsight(DbConnection=MockProgressManager())
+    pm = ProgressMonitor(DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='abc')
     b = ProgressTracker(Name='CreateFolder')
     c = ProgressTracker(Name='CopyFiles')
@@ -130,7 +130,7 @@ def test_can_total_progress_off_one_branch():
 
 
 def setup_basic_d():
-    pm = ProgressInsight(Name='MainWorkflow',
+    pm = ProgressMonitor(Name='MainWorkflow',
                          DbConnection=DynamoDbDriver())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
@@ -144,7 +144,7 @@ def setup_basic_d():
 
 
 def setup_basic():
-    pm = ProgressInsight(Name='MainWorkflow',
+    pm = ProgressMonitor(Name='MainWorkflow',
                          DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
@@ -158,7 +158,7 @@ def setup_basic():
 
 
 def setup_basic_multi_children():
-    pm = ProgressInsight(Name='MainWorkflow',
+    pm = ProgressMonitor(Name='MainWorkflow',
                          DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a')
     b = ProgressTracker(Name='CreateFolder', FriendlyId='b')
@@ -184,7 +184,7 @@ def setup_basic_multi_children():
 
 
 def setup_parallel():
-    pm = ProgressInsight(Name='MainWorkflow',
+    pm = ProgressMonitor(Name='MainWorkflow',
                          DbConnection=MockProgressManager())
     a = ProgressTracker(Name='CopyFiles', FriendlyId='a',
                         HasParallelChildren=True)
@@ -298,21 +298,21 @@ def test_root_full_key_is_just_id():
     assert pm.get_full_key() == pm.id
 
 
-@patch('tests.test_progressinsight.MockProgressManager')
+@patch('tests.test_progressmonitor.MockProgressManager')
 def test_update_calls_db_update(db_mock):
     pm = setup_basic()
     pm.update()
     assert db_mock.called_once()
 
 
-@patch('tests.test_progressinsight.MockProgressManager.update_tracker')
+@patch('tests.test_progressmonitor.MockProgressManager.update_tracker')
 def test_multiple_update_calls_db_update_only_once(db_mock):
     pm = setup_basic()
     pm.update().update()
     assert db_mock.called_once()
 
 
-@patch('tests.test_progressinsight.MockProgressManager.update_tracker')
+@patch('tests.test_progressmonitor.MockProgressManager.update_tracker')
 def test_child_object_saves_parent_object(db_mock):
     a = setup_basic().find_friendly_id('a')
     a.update(False)
@@ -458,22 +458,22 @@ def children_side_effect(id):
     return None
 
 
-@patch('progressinsight.RedisProgressManager.get_by_id')
-@patch('progressinsight.RedisProgressManager.get_children')
+@patch('progressmonitor.RedisProgressManager.get_by_id')
+@patch('progressmonitor.RedisProgressManager.get_children')
 def test_can_convert_from_db(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
-    pm = ProgressInsight(DbConnection=RedisProgressManager())
+    pm = ProgressMonitor(DbConnection=RedisProgressManager())
     pm = pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
     assert len(pm.all_children) == 5
 
 
-@patch('progressinsight.RedisProgressManager.get_by_id')
-@patch('progressinsight.RedisProgressManager.get_children')
+@patch('progressmonitor.RedisProgressManager.get_by_id')
+@patch('progressmonitor.RedisProgressManager.get_children')
 def test_can_start_all_parents(c_mock, g_mock):
     g_mock.side_effect = get_by_id_side_effect
     c_mock.side_effect = children_side_effect
-    pm = ProgressInsight(DbConnection=RedisProgressManager())
+    pm = ProgressMonitor(DbConnection=RedisProgressManager())
     pm = pm.load('94a52a41-bf9e-43e3-9650-859f7c263dc8')
     t = pm.find_id('039fe353-2c01-49f4-a743-b09c02c9f683')
     assert t
@@ -738,14 +738,14 @@ def test_to_update_item_done_true_sets_done_true():
 
 
 @mock_dynamodb2
-@patch('progressinsight.DynamoDbDriver.create_tables')
+@patch('progressmonitor.DynamoDbDriver.create_tables')
 def test_dynamodb_creates_tables_if_not_exist(ct_mock):
     setup_basic_d()
     assert ct_mock.called_once()
 
 
 @mock_dynamodb2
-@patch('progressinsight.DynamoDbDriver.create_tables')
+@patch('progressmonitor.DynamoDbDriver.create_tables')
 def test_create_tables_called_only_once(ct_mock):
     setup_basic_d()
     setup_basic_d()
@@ -754,7 +754,7 @@ def test_create_tables_called_only_once(ct_mock):
 
 
 @mock_dynamodb2
-@patch('tests.test_progressinsight.DynamoDbDriver.update_tracker')
+@patch('tests.test_progressmonitor.DynamoDbDriver.update_tracker')
 def test_update_tracker_called_only_once(ut_mock):
     t = setup_basic_d().start().succeed().update()
     t.update()
@@ -762,7 +762,7 @@ def test_update_tracker_called_only_once(ut_mock):
 
 
 @mock_dynamodb2
-@patch('progressinsight.TrackerBase.load')
+@patch('progressmonitor.TrackerBase.load')
 def test_refresh_calls_load(load_mock):
     t = setup_basic_d().start().succeed().update()
     t.refresh()

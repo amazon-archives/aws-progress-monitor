@@ -77,9 +77,9 @@ class DynamoDbDriver(DbDriver):
             p = p + '_'
 
         super(DynamoDbDriver, self).__init__(**kwargs)
-        self.TRACKER_TABLE = '{}ProgressInsightTrackers'.format(p)
-        self.CHILDREN_TABLE = '{}ProgressInsightChildren'.format(p)
-        self.FRIENDLY_ID_TABLE = '{}ProgressInsightFriendlyIds'.format(p)
+        self.TRACKER_TABLE = '{}ProgressMonitorTrackers'.format(p)
+        self.CHILDREN_TABLE = '{}ProgressMonitorChildren'.format(p)
+        self.FRIENDLY_ID_TABLE = '{}ProgressMonitorFriendlyIds'.format(p)
 
         client = self.dynamodb.meta.client
         if not does_table_exist(self.TRACKER_TABLE, client) or \
@@ -910,10 +910,10 @@ class ProgressTracker(TrackerBase):
         return self.metric and self.metric_name
 
 
-class ProgressInsight(ProgressTracker):
+class ProgressMonitor(ProgressTracker):
     def __init__(self, **kwargs):
         self.trackers = {}
-        super(ProgressInsight, self).__init__(**kwargs)
+        super(ProgressMonitor, self).__init__(**kwargs)
         self.trackers[self.id] = self
         self.main = self.trackers[self.id]
         self.db_conn.trackers = self.trackers
