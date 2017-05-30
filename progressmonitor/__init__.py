@@ -637,7 +637,7 @@ class TrackerBase(object):
 
     def with_estimated_seconds(self, e, clean=False):
         if not self.estimated_seconds == e:
-            self.estimated_seconds = e
+            self.estimated_seconds = int(e)
             if not clean:
                 self.dirty = True
         return self
