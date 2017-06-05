@@ -51,7 +51,7 @@ class TrackerState(object):
         else:
             delta = arrow.utcnow() - self.start_time
 
-        return delta.total_seconds()
+        return int(round(delta.total_seconds()))
 
     def remaining_time_in_seconds(self):
         if self.estimated_seconds:
@@ -420,13 +420,13 @@ class TrackerBase(object):
         if len(self.children):
             secs = 0
             for k in self.children:
-                tot = k.total_estimate
+                tot = int(k.total_estimate)
                 if self.has_parallel_children and tot > longest:
                     longest = tot
                 else:
                     secs = secs + tot
         else:
-            return self.estimated_seconds
+            return int(self.estimated_seconds)
 
         if self.has_parallel_children:
             return longest
