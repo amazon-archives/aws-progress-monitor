@@ -2,7 +2,7 @@ from distutils.core import setup
 setup(
   name='aws-progress-monitor',
   packages=['progressmonitor', 'progressmonitor.helpers'],
-  version='0.2.1',
+  version='0.2.2',
   description='Real-time workflow progress tracking',
   author='Troy Larson',
   author_email='troylars@amazon.com',
