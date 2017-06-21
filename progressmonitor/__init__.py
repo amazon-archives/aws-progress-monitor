@@ -70,8 +70,11 @@ class DbDriver(object):
 
 class DynamoDbDriver(DbDriver):
     def __init__(self, **kwargs):
-        self.dynamodb = kwargs.pop('DynamoDbResource',
-                                   boto3.resource('dynamodb'))
+        try:
+            self.dynamodb = kwargs.pop('DynamoDbResource')
+        except KeyError:
+            self.dynamodb = boto3.resource('dynamodb')
+
         p = kwargs.get('TablePrefix', '')
         if p:
             p = p + '_'
@@ -99,7 +102,7 @@ class DynamoDbDriver(DbDriver):
         )
         if len(response['Items']) > 0:
             id = response['Items'][0]['TrackerId']
-            return self.get_by_id(id)
+            return self.get_all_by_id(id)
         else:
             return None
 
@@ -244,15 +247,17 @@ class DynamoDbDriver(DbDriver):
         if 'TrackerName' in j.keys():
             t.with_name(j['TrackerName'], True)
         if 'EstimatedSeconds' in j.keys():
-            t.with_estimated_seconds(j['EstimatedSeconds'], True)
+            t.with_estimated_seconds(float(j['EstimatedSeconds']), True)
         if 'StartTime' in j.keys():
             t.with_start_time(arrow.get(j['StartTime']), True)
         if 'FinishTime' in j.keys():
             t.with_finish_time(arrow.get(j['FinishTime']), True)
         if 'StatusMessage' in j.keys():
-            t.with_status_msg(arrow.get(j['StatusMessage']), True)
+            t.with_status_msg(j['StatusMessage'], True)
         if 'FriendlyId' in j.keys():
             t.with_friendly_id(j['FriendlyId'], True)
+        if 'ParentId' in j.keys():
+            t.parent_id = j['ParentId']
         if 'InProgress' in j.keys():
             t.is_in_progress = str(j['InProgress']) == 'True'
         if 'TrackerStatus' in j.keys():
@@ -379,11 +384,11 @@ class TrackerBase(object):
 
     def get_progress_remaining(self):
         c, t = self.get_tracker_progress_total()
-        return 1-(c/t)
+        return 1.0 - (1.0 * c/t) if t else 0
 
     def get_progress_complete(self):
         c, t = self.get_tracker_progress_total()
-        return c/t
+        return 1.0 * c/t if t else 0
 
     def get_full_key(self):
         if not self.parent_id:
@@ -417,8 +422,8 @@ class TrackerBase(object):
         if self.has_parallel_children:
             longest = 0
 
+        secs = 0
         if len(self.children):
-            secs = 0
             for k in self.children:
                 tot = int(k.total_estimate)
                 if self.has_parallel_children and tot > longest:
@@ -473,12 +478,41 @@ class TrackerBase(object):
         if not self.status_msg == s:
             self.status_msg = s
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     @property
     def remaining_time_in_seconds(self):
+        """Returns time remaining based on overall elapsed time vs total estimated time."""
         return self.total_estimate - self.elapsed_time_in_seconds
+
+    @property
+    def remaining_tracker_time_in_seconds(self):
+        """Returns the time remaining of all in progress or not started trackers"""
+        if self.has_parallel_children:
+            longest = 0
+
+        secs = 0
+        if len(self.children):
+            for k in self.children:
+                remain = int(k.remaining_tracker_time_in_seconds)
+                if self.has_parallel_children and remain > longest:
+                    longest = remain
+                else:
+                    secs = secs + remain
+        else:
+            if self.status in ['Succeeded', 'Canceled', 'Failed']:
+                report = 0
+            elif 'Not started' in self.status:
+                report = self.total_estimate
+            else:
+                report = max(
+                    0, self.total_estimate - self.elapsed_time_in_seconds)
+
+        if self.has_parallel_children:
+            return longest
+        else:
+            return secs
 
     @property
     def elapsed_time_in_seconds(self):
@@ -508,7 +542,7 @@ class TrackerBase(object):
         eav[':name'] = self.name
         if self.estimated_seconds:
             ue = ue + ', EstimatedSeconds=:est_sec'
-            eav[':est_sec'] = self.estimated_seconds
+            eav[':est_sec'] = str(self.estimated_seconds)
         if self.state.start_time:
             ue = ue + ', StartTime=:start'
             eav[':start'] = self.state.start_time.isoformat()
@@ -521,6 +555,9 @@ class TrackerBase(object):
         if self.friendly_id:
             ue = ue + ', FriendlyId=:fid'
             eav[':fid'] = self.friendly_id
+        if self.parent_id:
+            ue = ue + ', ParentId=:pid'
+            eav[':pid'] = self.parent_id
         if self.last_update:
             ue = ue + ', LastUpdate=:l_u'
             eav[':l_u'] = self.last_update.isoformat()
@@ -536,12 +573,13 @@ class TrackerBase(object):
         if self.metric_name:
             ue = ue + ', MetricName=:m'
             eav[':m'] = self.metric_name
-        ue = ue + ', IsInProgress=:i'
+        ue = ue + ', InProgress=:i'
         eav[':i'] = self.is_in_progress
         ue = ue + ', HasParallelChildren=:hpc'
         eav[':hpc'] = self.has_parallel_children
         ue = ue + ', IsDone=:d'
         eav[':d'] = self.is_done
+
         return ue, json.loads(json.dumps(eav))
 
     def to_json(self):
@@ -623,12 +661,14 @@ class TrackerBase(object):
     def with_tracker(self, t):
         t.db_conn = self.db_conn
         t.parent = self
+        t.parent_id = self.id
         self.children.append(t)
         self.is_dirty = True
         return self
 
     def with_child(self, c):
         c.parent = self
+        t.parent_id = self.id
         if self.children and c in self.children:
             return self
         self.is_dirty = True
@@ -637,9 +677,9 @@ class TrackerBase(object):
 
     def with_estimated_seconds(self, e, clean=False):
         if not self.estimated_seconds == e:
-            self.estimated_seconds = int(e)
+            self.estimated_seconds = e
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     def with_start_time(self, s, clean=False):
@@ -647,7 +687,7 @@ class TrackerBase(object):
             self.start_time = s
             self.state.start_time = s
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     def with_finish_time(self, f, clean=False):
@@ -655,7 +695,7 @@ class TrackerBase(object):
             self.finish_time = f
             self.state.finish_time = f
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     def with_last_update(self, d):
@@ -673,14 +713,14 @@ class TrackerBase(object):
         if not self.source == s:
             self.source = s
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     def with_friendly_id(self, f, clean=False):
         if not self.friendly_id == f:
             self.friendly_id = f
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     def with_metric(self, **kwargs):
@@ -693,7 +733,7 @@ class TrackerBase(object):
         self.metric_namespace = ns
         self.metric = FluentMetric().with_namespace(self.metric_namespace)
         if not clean:
-            self.dirty = True
+            self.is_dirty = True
         return self
 
     def get_pct(self, m):
@@ -701,7 +741,7 @@ class TrackerBase(object):
         if m == 0 or t == 0:
             return 0
         else:
-            return float("{0:.2f}".format(m/t))
+            return float("{0:.2f}".format(1.0 * m/t))
 
     @property
     def not_started_pct(self):
@@ -840,7 +880,7 @@ class TrackerBase(object):
 
     def mark_done(self, status, m=None):
         if self.is_done:
-            logging.warning('Already done: {}'.self.id)
+            logging.warning('Already done: {}'.format(self.id))
             return self
         if m:
             self.with_status_msg(m)
@@ -853,9 +893,9 @@ class TrackerBase(object):
         return self
 
     def succeed(self, **kwargs):
-        if self.status == 'Succeeeded' and self.is_done and \
+        if self.status == 'Succeeded' and self.is_done and \
                           not self.is_in_progress:
-            logging.warning('Already succeeded {}'.self.id)
+            logging.warning('Already succeeded {}'.format(self.id))
             return self
         m = kwargs.get('Message', None)
         self.mark_done('Succeeded', m)
@@ -864,7 +904,7 @@ class TrackerBase(object):
     def cancel(self, **kwargs):
         if self.status == 'Canceled' and self.is_done and \
                 not self.is_in_progress:
-            logging.warning('Already canceled: {}'.self.id)
+            logging.warning('Already canceled: {}'.format(self.id))
             return self
         m = kwargs.get('Message', None)
         self.mark_done('Canceled', m)
@@ -873,7 +913,7 @@ class TrackerBase(object):
     def fail(self, **kwargs):
         if self.status == 'Failed' and self.is_done and \
                 not self.is_in_progress:
-            logging.warning('Already failed: {}'.self.id)
+            logging.warning('Already failed: {}'.format(self.id))
             return self
         m = kwargs.get('Message', None)
         self.mark_done('Failed', m)
@@ -890,19 +930,19 @@ class ProgressTracker(TrackerBase):
         if not self.name == n:
             self.name = n
             if not clean:
-                self.dirty = True
+                self.is_dirty = True
         return self
 
     def with_message(self, m):
         if not self.message == m:
             self.message = m
-            self.dirty = True
+            self.is_dirty = True
         return self
 
     def with_timestamp(self, m):
         if not m:
             m = arrow.utcnow().isoformat()
-        self.dirty = True
+        self.is_dirty = True
         return self
 
     @property
@@ -921,3 +961,4 @@ class ProgressMonitor(ProgressTracker):
     def update_all(self):
         self.update(True)
         return self
+
